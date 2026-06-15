@@ -15,7 +15,7 @@ import warnings
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import google.generativeai as genai
-from .models import GenerateRequest, TestSuite, TestCase, RangeConfig, FormatConfig
+from .models import GenerateRequest, TestSuite, TestCase, RangeConfig, FormatConfig, ApiGenerateRequest
 
 # ── Model chain ───────────────────────────────────────────────────────────────
 MODEL_CHAIN: List[Tuple[str, str]] = [
@@ -552,6 +552,64 @@ class AIEngine:
             
         return await self._generate_batched(req, "video", None, image_data=vid, extra_context=extra)
 
+    # ── API INTERACTION ───────────────────────────────────────────────────────
+    async def generate_from_api(self, req: ApiGenerateRequest) -> TestSuite:
+        req_headers = json.dumps(req.request_headers, indent=2)
+        res_headers = json.dumps(req.response_headers, indent=2)
+        
+        # Try to format body as JSON if possible for better readability in prompt
+        try:
+            req_body = json.dumps(json.loads(req.request_body), indent=2) if req.request_body else "None"
+        except:
+            req_body = req.request_body or "None"
+            
+        try:
+            res_body = json.dumps(req.response_body, indent=2) if req.response_body else "None"
+        except:
+            res_body = str(req.response_body) or "None"
+
+        extra = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+API INTERACTION LOG:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ENDPOINT: {req.method} {req.url}
+
+REQUEST HEADERS:
+{req_headers}
+
+REQUEST BODY:
+{req_body}
+
+RESPONSE STATUS: {req.response_status}
+
+RESPONSE HEADERS:
+{res_headers}
+
+RESPONSE BODY:
+{res_body}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TASK:
+Analyze this specific API interaction and generate a comprehensive test suite.
+Your tests should cover:
+1. Positive validation of the observed success (if 2xx).
+2. Edge case testing for similar endpoints.
+3. Security audits (auth, injection, exposure).
+4. Negative testing (4xx, 5xx scenarios, invalid inputs).
+5. Schema validation and data integrity.
+
+Strictly follow the selected focus areas: {', '.join(req.focus_areas or [])}
+"""
+        gen_req = GenerateRequest(
+            app_type="api",
+            focus_areas=req.focus_areas,
+            range_config=req.range_config,
+            format_config=req.format_config,
+            depth=req.depth
+        )
+        
+        return await self._generate_batched(gen_req, f"api:{req.method}:{req.url}", req.url, extra_context=extra)
+
     # ── BUG SCAN ──────────────────────────────────────────────────────────────
     async def bug_scan(self, app_type: str, description: str, url: Optional[str] = None,
                        depth: str = "standard", categories: Optional[List[str]] = None) -> dict:
@@ -638,3 +696,106 @@ Structure:
                 (reports_dir / "blog_error.log").write_text(err_msg)
             except: pass
             return []
+
+    # ── BUG FORMAT ────────────────────────────────────────────────────────
+    async def format_bug(self, raw_text: str, app_type: str = "web",
+                         severity: Optional[str] = None,
+                         environment: Optional[str] = None,
+                         module: Optional[str] = None) -> dict:
+        """Convert raw/informal bug text into a professional bug report."""
+        env_hint = f"\nEnvironment context: {environment}" if environment else ""
+        sev_hint = f"\nSeverity hint from reporter: {severity}" if severity else ""
+        mod_hint = f"\nModule/Area: {module}" if module else ""
+
+        prompt = f"""You are QAForge BugReportGenerator — a senior QA engineer who writes world-class, professional bug reports suitable for Jira, Azure DevOps, Bugzilla, and ClickUp.
+
+TASK: Convert the following raw/informal bug statement into a structured, professional bug report.
+
+RAW BUG STATEMENT:
+\"\"\"
+{raw_text}
+\"\"\"
+
+Application type: {app_type}{mod_hint}{sev_hint}{env_hint}
+
+IMPROVEMENT REQUIREMENTS & CRITICAL INSTRUCTIONS:
+1. GENERATE A HIGHLY DESCRIPTIVE BUG TITLE:
+   - The title must clearly identify:
+     - What is broken
+     - Where the issue occurs
+     - Under which condition it occurs (if applicable)
+   - Do NOT use vague titles such as "UI Issue", "Filter Not Working", "Data Missing", or "Page Issue".
+   - Avoid generic or abbreviated prefixes like "[Feature] - [What's wrong]". Write a complete, descriptive, developer-friendly title.
+
+2. GENERATE A DETAILED BUG DESCRIPTION:
+   - Do not simply rewrite or paraphrase the user's input.
+   - Expand the bug details into a complete, professional explanation.
+   - Include:
+     - Affected module or page
+     - Affected functionality
+     - Current observed behavior
+     - Expected behavior (if inferable)
+     - Potential user impact
+   - Use professional, objective QA language (avoid informal or emotional terms).
+
+3. CONTEXT ENHANCEMENT RULES:
+   - Analyze all provided bug details, screenshots, page names, URLs, labels, and UI elements.
+   - Infer missing context whenever reasonably possible.
+   - Convert short notes or incomplete tester descriptions into complete, fully-fleshed bug reports.
+   - If a page name, component name, or feature name is available or inferable, include it explicitly in both the title and the description.
+
+4. QUALITY VALIDATION & SELF-VERIFICATION:
+   Before generating the final output, verify:
+   - Can a developer understand the issue from the title alone?
+   - Does the description explain what is happening and where?
+   - Does the title contain enough context to distinguish it from similar bugs?
+   - Is the description significantly more informative than the original input?
+
+EXAMPLE INPUT & EXPECTED OUTPUT:
+Input:
+"colors are not visible on search product page but they are in product detail page"
+
+Expected Output JSON Fields:
+- bug_title: "Product Color Variants Are Not Displayed on Search Results Page Despite Being Available on Product Detail Page"
+- bug_description: "Product color variants are not displayed within the Search Results Page for products that have multiple color options configured. When users navigate to the corresponding Product Detail Page, all color variants are displayed correctly. This inconsistency creates a mismatch between search results and product details, preventing users from viewing available color options directly from the search page and potentially impacting product selection decisions."
+- steps_to_reproduce: [
+    "Navigate to the Search Results Page.",
+    "Search for a product with multiple color variants.",
+    "Observe the product card displayed in the search results.",
+    "Open the same product's Product Detail Page."
+  ]
+- expected_results: "Available color variants should be displayed consistently on both the Search Results Page and the Product Detail Page."
+- actual_results: "Color variants are not displayed on the Search Results Page but are visible on the Product Detail Page."
+
+This module handles bugs across ALL areas: UI, functionality, API, performance, validation, search, filters, cart, checkout, PDF generation, mobile, admin panels, and more.
+
+OUTPUT ONLY valid JSON — no markdown, no backticks, no explanation.
+Required JSON structure:
+{{
+  "bug_title": "string — Clear, descriptive, developer-friendly title that identifies what is broken, where, and when.",
+  "bug_id": "string — auto-generated ID like BUG-001",
+  "severity": "Critical|High|Medium|Low",
+  "priority": "P1|P2|P3|P4",
+  "bug_description": "string — Detailed explanation of the issue, affected area, observed behavior, expected behavior, and user impact.",
+  "steps_to_reproduce": [
+    "string — step-by-step clear, numbered instructions to reproduce the bug."
+  ],
+  "expected_results": "string — precise expected behavior.",
+  "actual_results": "string — precise actual observed behavior.",
+  "environment": "string — platform, browser, OS, device, or app version.",
+  "additional_notes": "string — frequency, workarounds, or related info."
+}}
+
+Quality Rules:
+- Steps MUST be actionable — a developer should reproduce the bug in under 2 minutes
+- Expected vs Actual MUST clearly contrast with each other
+- NEVER use vague language like 'sometimes', 'maybe', 'could be' — be definitive
+- All text must use professional, objective QA documentation language
+- Severity guidelines: Critical = system crash/data loss, High = major feature broken, Medium = feature partially works, Low = cosmetic/minor
+- Priority guidelines: P1 = fix immediately, P2 = fix in current sprint, P3 = fix in next sprint, P4 = backlog"""
+
+        text, mname = await asyncio.to_thread(self._try, prompt, None, "flash")
+        data = _parse(text)
+        data["model_used"] = MODEL_LABELS.get(mname, mname)
+        data["formatted_at"] = datetime.now().isoformat()
+        return data

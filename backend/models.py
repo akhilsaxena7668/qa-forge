@@ -95,3 +95,32 @@ class BlogPost(BaseModel):
     date: str
     read_time: str
     image_url: Optional[str] = None
+
+
+class ProxyRequest(BaseModel):
+    url: str
+    method: str = "GET"
+    headers: Optional[Dict[str, str]] = {}
+    body: Optional[str] = None
+
+
+class ApiGenerateRequest(BaseModel):
+    url: str
+    method: str
+    request_headers: Optional[Dict[str, str]] = {}
+    request_body: Optional[str] = None
+    response_status: int
+    response_headers: Optional[Dict[str, str]] = {}
+    response_body: Optional[Any] = None
+    focus_areas: Optional[List[str]] = ["api", "security", "negative"]
+    range_config: Optional[RangeConfig] = None
+    format_config: Optional[FormatConfig] = None
+    depth: str = "standard"
+
+
+class BugFormatRequest(BaseModel):
+    raw_text: str
+    app_type: str = "web"
+    severity: Optional[str] = None          # pre-set severity hint
+    environment: Optional[str] = None       # e.g. staging, production
+    module: Optional[str] = None            # ui, api, cart, checkout, mobile, admin, etc.

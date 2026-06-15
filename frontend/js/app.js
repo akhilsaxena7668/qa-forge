@@ -51,6 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
   renderFieldPills();
   updateFocusNote();
   updateLangOpts();
+  handleHashNavigation();
+  window.addEventListener('hashchange', handleHashNavigation);
   setInterval(checkHealth, 20000);
 });
 
@@ -96,10 +98,27 @@ function nav(page) {
   document.getElementById(`p-${page}`)?.classList.add('active');
   document.querySelector(`[data-p="${page}"]`)?.classList.add('active');
   window.scrollTo({ top: 0, behavior: 'instant' });
+
+  if (window.location.hash !== `#${page}`) {
+    history.pushState(null, null, `#${page}`);
+  }
+
   if (page === 'execute') loadSuiteList();
   if (page === 'automate') { loadAutoSuiteList(); updateLangOpts(); }
   if (page === 'reports') loadReportList();
+  if (page === 'apitest') { if (typeof initApiTester === 'function') initApiTester(); }
+  if (page === 'perftest') { if (typeof initPerfTester === 'function') initPerfTester(); }
   if (page === 'settings') { loadCfgUI(); renderFmtTemplateList(); }
+}
+
+function handleHashNavigation() {
+  const hash = window.location.hash.slice(1);
+  if (hash) {
+    const validPages = ['home', 'generate', 'bugscan', 'bugformat', 'antivirus', 'apitest', 'perftest', 'execute', 'automate', 'reports', 'settings'];
+    if (validPages.includes(hash)) {
+      nav(hash);
+    }
+  }
 }
 
 // Config sidebar tab switcher
@@ -658,20 +677,20 @@ function exportCsv() {
   if (!allTests.length) return toast('No tests to export', 'err');
   const headers = ['Test Case ID', 'Category', 'Input', 'Test steps', 'Scenario Title', 'Scenario', 'Pre-Condition', 'Expected Result', 'Actual Result', 'Browser', 'Screen', 'Status', 'Priority', 'Severity', 'Created By', 'Tags'];
   const rows = allTests.map(t => [
-    t.id, 
-    t.category, 
-    t.test_input, 
-    (t.steps || []).map(s => `${s.step}. ${s.action}`).join(' | '), 
-    t.name, 
-    t.scenario || t.description, 
+    t.id,
+    t.category,
+    t.test_input,
+    (t.steps || []).map(s => `${s.step}. ${s.action}`).join(' | '),
+    t.name,
+    t.scenario || t.description,
     (t.preconditions || []).join(' | '),
-    t.expected_result, 
-    t.actual_result, 
-    t.browser, 
-    t.screen, 
-    t.status, 
-    t.priority, 
-    t.severity, 
+    t.expected_result,
+    t.actual_result,
+    t.browser,
+    t.screen,
+    t.status,
+    t.priority,
+    t.severity,
     t.created_by,
     (t.tags || []).join(', ')
   ].map(x => `"${(x || '').toString().replace(/"/g, '""')}"`).join(','));
@@ -1100,6 +1119,172 @@ async function postForm(url, fd) { const r = await fetch(url, { method: 'POST', 
 function v(id) { return document.getElementById(id)?.value || ''; }
 function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
 function toast(msg, type = 'inf') { const t = document.getElementById('toast'); t.textContent = msg; t.className = `toast ${type}`; clearTimeout(t._t); t._t = setTimeout(() => t.className = 'toast hidden', 3500); }
+
+// ═══════ BUG REPORT GENERATOR ═══════
+let lastBugReport = null;
+
+function toggleBfMod(el) {
+  document.querySelectorAll('.bfmod').forEach(m => m.classList.remove('active'));
+  el.classList.add('active');
+}
+function getSelectedModule() {
+  const active = document.querySelector('.bfmod.active');
+  return active ? active.dataset.v : 'ui';
+}
+
+async function runBugFormat() {
+  const raw = v('bfRawText').trim();
+  if (!raw) return toast('Enter bug details first', 'err');
+  if (raw.length < 10) return toast('Please provide more detail (min 10 chars)', 'err');
+
+  // Show loading
+  document.getElementById('bfLoad').classList.remove('hidden');
+  document.getElementById('bfEmpty').style.display = 'none';
+  document.getElementById('bfOutput').classList.add('hidden');
+  document.getElementById('bfActs').style.display = 'none';
+
+  const msgs = [
+    'Analyzing raw bug statement…',
+    'Fixing grammar & spelling…',
+    'Converting to professional QA language…',
+    'Inferring reproduction steps…',
+    'Determining severity & priority…',
+    'Structuring for Jira / Azure DevOps…',
+    'Generating professional bug report…'
+  ];
+  let i = 0;
+  const iv = setInterval(() => {
+    if (document.getElementById('bfLoad').classList.contains('hidden')) return clearInterval(iv);
+    document.getElementById('bfLoadSub').textContent = msgs[i++ % msgs.length];
+  }, 1100);
+
+  try {
+    const body = {
+      raw_text: raw,
+      app_type: v('bfAppType'),
+      module: getSelectedModule(),
+    };
+    const env = v('bfEnv').trim();
+    if (env) body.environment = env;
+
+    const res = await post('/api/format/bug', body);
+    lastBugReport = res;
+    clearInterval(iv);
+    document.getElementById('bfLoad').classList.add('hidden');
+    showBugReport(res);
+
+    // Show Regenerate button
+    document.getElementById('bfRegenBtn').style.display = '';
+  } catch (e) {
+    clearInterval(iv);
+    document.getElementById('bfLoad').classList.add('hidden');
+    document.getElementById('bfEmpty').style.display = '';
+    toast(e.message, 'err');
+  }
+}
+
+function showBugReport(r) {
+  document.getElementById('bfOutput').classList.remove('hidden');
+  document.getElementById('bfActs').style.display = 'flex';
+
+  // Severity colors
+  const sevColors = {
+    critical: 'var(--cr)', high: 'var(--ch)', medium: 'var(--cm)', low: 'var(--t3)'
+  };
+  const sevColor = sevColors[(r.severity || '').toLowerCase()] || 'var(--t2)';
+
+  // Header badges
+  document.getElementById('bfHeaderRow').innerHTML = `
+    <div class="bugfmt-badge-row">
+      <span class="bugfmt-id">${r.bug_id || 'BUG-001'}</span>
+      <span class="bugfmt-sev" style="border-color:${sevColor};color:${sevColor}">${(r.severity || 'medium').toUpperCase()}</span>
+      <span class="bugfmt-prio">${r.priority || 'P2'}</span>
+      <span class="bugfmt-model">AI: ${r.model_used || 'Gemini'}</span>
+    </div>
+  `;
+
+  // Build report sections — Severity & Priority first, then Title, Description, Steps, Expected, Actual
+  const sections = [
+    { label: 'SEVERITY', value: (r.severity || 'Medium').toUpperCase(), cls: 'bugfmt-sev-val', sevLevel: r.severity },
+    { label: 'PRIORITY', value: r.priority || 'P2', cls: 'bugfmt-prio-val' },
+    { label: 'BUG TITLE', value: r.bug_title, cls: 'bugfmt-title-val' },
+    { label: 'BUG DESCRIPTION', value: r.bug_description, cls: 'bugfmt-desc-val' },
+    { label: 'STEPS TO REPRODUCE', value: r.steps_to_reproduce, type: 'steps' },
+    { label: 'EXPECTED RESULTS', value: r.expected_results, cls: 'bugfmt-expected' },
+    { label: 'ACTUAL RESULTS', value: r.actual_results, cls: 'bugfmt-actual' },
+  ];
+
+  // Optional sections
+  if (r.environment) sections.push({ label: 'ENVIRONMENT', value: r.environment, cls: 'bugfmt-env-val' });
+  if (r.additional_notes) sections.push({ label: 'ADDITIONAL NOTES', value: r.additional_notes, cls: 'bugfmt-notes-val' });
+
+  document.getElementById('bfReport').innerHTML = sections.map(s => {
+    if (s.type === 'steps') {
+      const steps = Array.isArray(s.value) ? s.value : [s.value];
+      return `<div class="bugfmt-section">
+        <div class="bugfmt-label">${s.label}</div>
+        <div class="bugfmt-steps">${steps.map((st, i) => `<div class="bugfmt-step"><span class="bugfmt-step-n">${i + 1}</span><span class="bugfmt-step-text">${st}</span></div>`).join('')}</div>
+      </div>`;
+    }
+    // Severity field with color
+    if (s.sevLevel) {
+      const sc = sevColors[(s.sevLevel || '').toLowerCase()] || 'var(--t2)';
+      return `<div class="bugfmt-section bugfmt-inline-row">
+        <div class="bugfmt-label">${s.label}</div>
+        <div class="${s.cls}" style="color:${sc};font-weight:700">${s.value}</div>
+      </div>`;
+    }
+    return `<div class="bugfmt-section">
+      <div class="bugfmt-label">${s.label}</div>
+      <div class="${s.cls || 'bugfmt-val'}">${s.value || '—'}</div>
+    </div>`;
+  }).join('');
+
+  toast('✓ Professional bug report generated — ready to copy!', 'ok');
+}
+
+function copyBugReport() {
+  if (!lastBugReport) return toast('No report to copy', 'err');
+  const r = lastBugReport;
+  const steps = Array.isArray(r.steps_to_reproduce) ? r.steps_to_reproduce.map((s, i) => `${i + 1}. ${s}`).join('\n') : r.steps_to_reproduce;
+  const text = `Severity: ${(r.severity || 'Medium').toUpperCase()}
+Priority: ${r.priority || 'P2'}
+
+Bug Title: ${r.bug_title}
+
+Bug Description:
+${r.bug_description}
+
+Steps to Reproduce:
+${steps}
+
+Expected Results:
+${r.expected_results}
+
+Actual Results:
+${r.actual_results}${r.environment ? `\n\nEnvironment:\n${r.environment}` : ''}${r.additional_notes ? `\n\nAdditional Notes:\n${r.additional_notes}` : ''}`;
+
+  navigator.clipboard.writeText(text).then(() => {
+    toast('✓ Bug report copied to clipboard — paste into Jira, Azure DevOps, or any tracker!', 'ok');
+    // Brief visual feedback on copy buttons
+    document.querySelectorAll('.bugfmt-copy-big, .bugfmt-copy-main').forEach(btn => {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      btn.style.background = 'var(--ac2)';
+      btn.style.color = '#000';
+      setTimeout(() => { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; }, 1500);
+    });
+  });
+}
+
+function downloadBugReport() {
+  if (!lastBugReport) return toast('No report to download', 'err');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(lastBugReport, null, 2)], { type: 'application/json' }));
+  a.download = `qaforge-bug-${lastBugReport.bug_id || 'report'}-${Date.now()}.json`;
+  a.click();
+  toast('Bug report downloaded as JSON', 'ok');
+}
 
 // ═══════ ANTIVIRUS ═══════
 let avFile = null;

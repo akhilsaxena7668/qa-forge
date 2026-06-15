@@ -1,316 +1,292 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="manifest" href="manifest.json" />
-    <meta name="theme-color" content="#09090b" />
-    <!-- PWA: Apple / iOS -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="QAForge" />
-    <link rel="apple-touch-icon" href="assets/icon-192.png" />
-    <!-- Favicons -->
-    <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-96.png" />
-    <title>Blog Detail | QAForge</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <script>
-        (function () {
-            const theme = localStorage.getItem('qaf-theme') || 'cyber';
-            document.documentElement.setAttribute('data-theme', theme);
-        })();
-    </script>
-    <style>
-        :root, [data-theme="cyber"] {
-            --primary: #3b82f6;
-            --secondary: #8b5cf6;
-            --bg-dark: #09090b;
-            --bg-card: #18181b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --accent: #10b981;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QAForge Blog Insight</title>
+  <link rel="stylesheet" href="css/app.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      margin: 0;
+    }
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: white;
+      text-decoration: none;
+    }
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--primary), var(--accent-1));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .brand-icon svg { width: 20px; height: 20px; }
+    .nav-cta {
+      background: var(--primary);
+      color: white;
+      text-decoration: none;
+      padding: 0.5rem 1.25rem;
+      border-radius: var(--radius);
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .nav-cta:hover { filter: brightness(1.1); }
+    
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+    }
+    .nav-link {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      transition: color 0.2s ease;
+      text-decoration: none;
+    }
+    .nav-link:hover { color: var(--text-primary); }
 
-        [data-theme="synthwave"] {
-            --primary: #d946ef;
-            --secondary: #8b5cf6;
-            --bg-dark: #0f0914;
-            --bg-card: #1d1128;
-            --text-main: #fdf4ff;
-            --text-muted: #d8b4fe;
-            --accent: #10b981;
-        }
+    .menu-toggle {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      padding: 5px;
+      z-index: 101;
+      background: none;
+      border: none;
+      cursor: pointer;
+    }
+    .menu-toggle span {
+      display: block;
+      width: 24px;
+      height: 2px;
+      background: var(--text-primary);
+      transition: all 0.3s;
+    }
+    .menu-toggle.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .menu-toggle.active span:nth-child(2) { opacity: 0; }
+    .menu-toggle.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
-        [data-theme="forest"] {
-            --primary: #10b981;
-            --secondary: #059669;
-            --bg-dark: #050f09;
-            --bg-card: #0f2015;
-            --text-main: #ecfdf5;
-            --text-muted: #a7f3d0;
-            --accent: #34d399;
-        }
-
-        [data-theme="amber"] {
-            --primary: #f59e0b;
-            --secondary: #d97706;
-            --bg-dark: #120c02;
-            --bg-card: #221606;
-            --text-main: #fffbeb;
-            --text-muted: #fde68a;
-            --accent: #fbbf24;
-        }
-
-        [data-theme="ice"] {
-            --primary: #0284c7;
-            --secondary: #4f46e5;
-            --bg-dark: #f8fafc;
-            --bg-card: #f1f5f9;
-            --text-main: #0f172a;
-            --text-muted: #475569;
-            --accent: #059669;
-        }
-
-        [data-theme="slate"] {
-            --primary: #475569;
-            --secondary: #334155;
-            --bg-dark: #f8fafc;
-            --bg-card: #e2e8f0;
-            --text-main: #0f172a;
-            --text-muted: #475569;
-            --accent: #059669;
-        }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Outfit', sans-serif;
-            background: var(--bg-dark);
-            color: var(--text-main);
-            line-height: 1.6;
-            overflow-x: hidden;
-        }
-
-        .nav-bar {
-            padding: 1.5rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: var(--bg-dark);
-            backdrop-filter: blur(10px);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .logo {
-            font-weight: 700;
-            font-size: 1.5rem;
-            color: white;
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .back-btn {
-            color: var(--primary);
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-            transition: 0.3s;
-        }
-        .back-btn:hover { transform: translateX(-5px); }
-
-        .article-container {
-            max-width: 800px;
-            margin: 4rem auto;
-            padding: 0 2rem;
-        }
-
-        .article-header { margin-bottom: 3rem; }
-        .article-tag {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: #000;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 700;
-            text-transform: uppercase;
-        }
-
-        .article-title {
-            font-size: 3rem;
-            line-height: 1.2;
-            margin: 1.5rem 0;
-            color: var(--text-main);
-        }
-
-        .article-meta {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            color: var(--text-muted);
-            font-size: 0.95rem;
-        }
-
-        .hero-img {
-            width: 100%;
-            height: 450px;
-            border-radius: 24px;
-            object-fit: crop;
-            margin-bottom: 3rem;
-            border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-        }
-
-        .article-body {
-            font-size: 1.15rem;
-            color: #cbd5e1;
-        }
-        .article-body p { margin-bottom: 2rem; }
-
-        .author-box {
-            margin-top: 5rem;
-            padding: 2rem;
-            background: var(--bg-card);
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            border: 1px solid rgba(255,255,255,0.05);
-        }
-        .author-avatar {
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(45deg, var(--primary), var(--accent));
-            border-radius: 50%;
-        }
-
-        #error-msg { text-align: center; margin-top: 10rem; display: none; }
-
-        @media (max-width: 768px) {
-            .article-title { font-size: 2.2rem; }
-            .hero-img { height: 300px; }
-        }
-    </style>
+    @media (max-width: 768px) {
+      .menu-toggle { display: flex; }
+      .nav-links {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100vh;
+        width: 250px;
+        background: var(--bg-surface);
+        flex-direction: column;
+        justify-content: center;
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        border-left: 1px solid var(--border);
+        box-shadow: -5px 0 30px rgba(0,0,0,0.5);
+      }
+      .nav-links.active { transform: translateX(0); }
+      .nav-cta { display: none; }
+    }
+    .blog-container {
+      max-width: 800px;
+      margin: 4rem auto;
+      padding: 0 2rem;
+    }
+    .blog-header { margin-bottom: 3rem; }
+    .blog-tag {
+      background: rgba(99, 102, 241, 0.1);
+      color: var(--primary);
+      padding: 0.25rem 0.75rem;
+      border-radius: 100px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      display: inline-block;
+      margin-bottom: 1rem;
+    }
+    .blog-title {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      line-height: 1.2;
+    }
+    .blog-meta {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+    .author-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .author-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      overflow: hidden;
+    }
+    .author-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .blog-content {
+      font-size: 1.125rem;
+      line-height: 1.8;
+      color: var(--text-secondary);
+    }
+    .blog-content p {
+      margin-bottom: 1.5rem;
+    }
+    .error-state {
+      text-align: center;
+      padding: 4rem;
+      color: var(--danger);
+    }
+    .loading-state {
+      text-align: center;
+      padding: 4rem;
+      color: var(--text-muted);
+    }
+  </style>
 </head>
 <body>
-
-<nav class="nav-bar">
-    <a href="index.html" class="logo">
-        <div style="width:24px; height:24px"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" stroke-width="2" stroke-linejoin="round" fill="none"/></svg></div>
-        QAForge
+  <nav>
+    <a href="/" class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" stroke-width="2" stroke-linejoin="round" fill="none" />
+        </svg>
+      </div>
+      QAForge
     </a>
-    <a href="index.html" class="back-btn">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-        Back to Home
-    </a>
-</nav>
-
-<div id="error-msg">
-    <h1>Article Not Found</h1>
-    <p>The post you are looking for doesn't exist or is still being generated.</p>
-</div>
-
-<article class="article-container" id="article-view" style="display: none;">
-    <header class="article-header">
-        <span class="article-tag" id="tag">Category</span>
-        <h1 class="article-title" id="title">Loading Article...</h1>
-        <div class="article-meta">
-            <span id="date">Date</span>
-            <span id="readTime">Read Time</span>
-        </div>
-    </header>
-
-    <img src="" alt="Hero" class="hero-img" id="hero">
-
-    <div class="article-body" id="content">
-        <!-- Content injected here -->
+    <div class="nav-links" id="navLinks">
+      <a href="/#features" class="nav-link">Features</a>
+      <a href="/#models" class="nav-link">AI Models</a>
+      <a href="/#how" class="nav-link">Workflow</a>
+      <a href="/#contact" class="nav-link">Contact Us</a>
     </div>
+    <a href="app.html" class="nav-cta">Launch App</a>
+    <button class="menu-toggle" id="menuToggle">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </nav>
 
-    <div class="author-box">
-        <div class="author-avatar">
-            <img src="assets/akhil.jpg" alt="Akhil Saxena" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
-        </div>
-        <div>
-            <a href="author.html" style="color: #60a5fa; text-decoration: none; font-weight: 700; transition: color 0.3s;" id="author">Akhil Saxena</a>
-            <div style="font-size: 0.9rem; color: var(--text-muted)">Software Tester @ Navoto</div>
-        </div>
+  <main class="blog-container" id="blogContainer">
+    <div class="loading-state">
+      <i class="fas fa-circle-notch fa-spin fa-2x"></i>
+      <p style="margin-top: 1rem">Loading article...</p>
     </div>
-</article>
+  </main>
 
-<script>
-    function getBlogImage(category) {
-        const key = (category || '').toUpperCase();
-        const images = {
-            'AI': 'blog_ai.png',
-            'SECURITY': 'blog_security.png',
-            'PERFORMANCE': 'blog_ai.png',
-            'AUTOMATION': 'blog_automation.png',
-            'MANUAL-AI': 'blog_manual_ai.png'
-        };
-        const imgName = images[key] || 'blog_ai.png';
-        return `assets/${imgName}`;
-    }
-
-    async function loadArticle() {
-        const params = new URLSearchParams(window.location.search);
-        const id = params.get('id');
-        if (!id) {
-            document.getElementById('error-msg').style.display = 'block';
-            return;
-        }
-
-        try {
-            const res = await fetch(`/api/blogs/${id}`);
-            if (!res.ok) throw new Error();
-            const data = await res.json();
-
-            document.getElementById('tag').innerText = data.category;
-            document.getElementById('title').innerText = data.title;
-            document.getElementById('date').innerText = data.date;
-            document.getElementById('readTime').innerText = data.read_time;
-            document.getElementById('author').innerText = data.author;
-            document.getElementById('hero').src = getBlogImage(data.category);
-
-            // Simple paragraph splitting for AI content
-            const contentHtml = data.content.split('\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('');
-            document.getElementById('content').innerHTML = contentHtml;
-
-            document.getElementById('article-view').style.display = 'block';
-        } catch (e) {
-            document.getElementById('error-msg').style.display = 'block';
-        }
-    }
-    loadArticle();
-
-    // Theme Update Listener
-    window.addEventListener('storage', (e) => {
-        if (e.key === 'qaf-theme') {
-            document.documentElement.setAttribute('data-theme', e.newValue || 'cyber');
-        }
-    });
-</script>
-
-  <!-- PWA: Enhanced Service Worker -->
   <script>
-    (function() {
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', async () => {
-          try {
-            await navigator.serviceWorker.register('sw.js');
-          } catch (err) {
-            console.log('[PWA] SW registration failed:', err);
-          }
-        });
+    async function loadBlog() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const blogId = urlParams.get('id');
+      const container = document.getElementById('blogContainer');
+
+      if (!blogId) {
+        container.innerHTML = '<div class="error-state"><h2>Article not found</h2><p>No blog ID provided.</p><br><a href="/" style="color:var(--primary); text-decoration: none;">&larr; Return Home</a></div>';
+        return;
       }
-    })();
+
+      try {
+        const response = await fetch(`/api/blogs/${blogId}`);
+        if (!response.ok) throw new Error('Blog not found');
+        const blog = await response.json();
+
+        // Basic parsing of double-newline delimited text into paragraphs
+        const contentHtml = blog.content.split('\n\n').map(p => `<p>${p}</p>`).join('');
+
+        const key = (blog.category || '').toUpperCase();
+        const images = {
+          'AI': 'blog_ai.png',
+          'SECURITY': 'blog_security.png',
+          'PERFORMANCE': 'blog_ai.png',
+          'AUTOMATION': 'blog_automation.png',
+          'MANUAL-AI': 'blog_manual_ai.png'
+        };
+        const imgSrc = 'assets/' + (images[key] || 'blog_ai.png');
+
+        container.innerHTML = `
+          <header class="blog-header">
+            <span class="blog-tag">${blog.category || 'Article'}</span>
+            <h1 class="blog-title">${blog.title}</h1>
+            <div class="blog-meta">
+              <div class="author-info">
+                <div class="author-avatar">
+                  <img src="assets/akhil.jpg" alt="${blog.author}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(blog.author || 'User')}&background=6366f1&color=fff'">
+                </div>
+                <div>
+                  <strong>${blog.author || 'QAForge Team'}</strong>
+                  <div style="font-size: 0.75rem">${blog.author_role || ''}</div>
+                </div>
+              </div>
+              <div style="width: 1px; height: 30px; background: var(--border); margin: 0 0.5rem"></div>
+              <div>
+                <div>${blog.date || new Date().toLocaleDateString()}</div>
+                <div>${blog.read_time || '5 min read'}</div>
+              </div>
+            </div>
+            <div style="margin-top: 2rem; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+              <img src="${imgSrc}" alt="${blog.title}" style="width: 100%; height: auto; max-height: 400px; object-fit: cover;" />
+            </div>
+          </header>
+          <div class="blog-content">
+            ${contentHtml}
+          </div>
+          <div style="margin-top: 4rem; text-align: center;">
+            <a href="/" style="color: var(--primary); text-decoration: none; font-weight: 500;">&larr; Back to all articles</a>
+          </div>
+        `;
+      } catch (error) {
+        container.innerHTML = `<div class="error-state"><h2>Error</h2><p>Could not load the article. It may have been removed.</p><br><a href="/" style="color:var(--primary); text-decoration: none;">&larr; Return Home</a></div>`;
+      }
+    }
+
+    loadBlog();
+
+    // Mobile menu toggle
+    const menuToggle = document.getElementById('menuToggle');
+    const navLinks = document.getElementById('navLinks');
+    if (menuToggle && navLinks) {
+      menuToggle.onclick = () => {
+        menuToggle.classList.toggle('active');
+        navLinks.classList.toggle('active');
+      };
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('nav') && navLinks.classList.contains('active')) {
+          menuToggle.classList.remove('active');
+          navLinks.classList.remove('active');
+        }
+      });
+    }
   </script>
 </body>
 </html>

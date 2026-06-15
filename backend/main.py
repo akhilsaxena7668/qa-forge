@@ -24,7 +24,7 @@ _load_env()
 from .ai_engine import AIEngine, MODEL_LABELS, MODEL_CHAIN
 from .test_executor import TestExecutor
 from .report_gen import ReportGenerator
-from .models import GenerateRequest, ExecuteRequest, BugScanRequest, AppConfig, RangeConfig
+from .models import GenerateRequest, ExecuteRequest, BugScanRequest, AppConfig, RangeConfig, ProxyRequest, ApiGenerateRequest, BugFormatRequest
 from .antivirus import AntivirusScanner
 
 app = FastAPI(title="QAForge Gemini API", version="4.0.0")
@@ -159,6 +159,12 @@ async def gen_video(
     store["suites"][suite.id] = suite.dict()
     return suite
 
+@app.post("/api/generate/api")
+async def gen_api(req: ApiGenerateRequest):
+    suite = await ai.generate_from_api(req)
+    store["suites"][suite.id] = suite.dict()
+    return suite
+
 # ── Bug Scan ───────────────────────────────────────────────────────────────────
 @app.post("/api/scan/bugs")
 async def bug_scan(req: BugScanRequest):
@@ -180,6 +186,12 @@ async def dl_scan(sid: str):
     p = REPORTS_DIR / f"scan_{str(sid)[:8]}.json"  # type: ignore
     p.write_text(json.dumps(scan, indent=2))
     return FileResponse(p, media_type="application/json", filename=p.name)
+
+# ── Bug Format ─────────────────────────────────────────────────────────────────
+@app.post("/api/format/bug")
+async def format_bug(req: BugFormatRequest):
+    result = await ai.format_bug(req.raw_text, req.app_type, req.severity, req.environment, req.module)
+    return result
 
 # ── Suites ─────────────────────────────────────────────────────────────────────
 @app.get("/api/suites")
@@ -324,6 +336,55 @@ async def delete_deep_threat(req: DeleteRequest):
     except Exception as e:
         raise HTTPException(500, str(e))
 
+# ── API PROXY (for CORS-restricted APIs) ──────────────────────────────────────
+import httpx
+
+@app.post("/api/proxy")
+async def proxy_request(req: ProxyRequest):
+    try:
+        # Build cookies from the Cookie header if present
+        jar = httpx.Cookies()
+        req_headers = {k: v for k, v in (req.headers or {}).items() if k.lower() not in ('host', 'origin', 'referer')}
+        cookie_hdr = req_headers.pop('cookie', req_headers.pop('Cookie', None))
+        if cookie_hdr:
+            for pair in cookie_hdr.split(';'):
+                pair = pair.strip()
+                if '=' in pair:
+                    ck, cv = pair.split('=', 1)
+                    jar.set(ck.strip(), cv.strip())
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, cookies=jar) as client:
+            response = await client.request(
+                method=req.method,
+                url=req.url,
+                headers=req_headers,
+                content=req.body.encode() if req.body else None,
+            )
+            res_headers = dict(response.headers)
+
+            # Extract Set-Cookie headers (httpx merges them; get raw from response)
+            set_cookies = []
+            for k, v in response.headers.multi_items():
+                if k.lower() == 'set-cookie':
+                    set_cookies.append(v)
+
+            try:
+                body = response.json()
+            except Exception:
+                body = response.text
+            return {
+                "status": response.status_code,
+                "statusText": response.reason_phrase,
+                "headers": res_headers,
+                "body": body,
+                "size": len(response.content),
+                "set_cookies": set_cookies,
+            }
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Request timed out")
+    except Exception as e:
+        raise HTTPException(502, f"Proxy error: {str(e)}")
+
 # ── BLOGS ──────────────────────────────────────────────────────────────────────
 BLOG_CACHE_FILE = Path(__file__).parent.parent / "reports" / "daily_blogs.json"
 
@@ -374,7 +435,27 @@ async def get_blog_detail(blog_id: str):
     # If not in cache, try to regenerate (or return 404)
     raise HTTPException(status_code=404, detail="Blog post not found")
 
+# ── PERFORMANCE TEST RESULTS ───────────────────────────────────────────────────
+@app.post("/api/perf/results")
+async def save_perf_result(result: dict):
+    rid = str(uuid.uuid4())
+    result["id"] = rid
+    store.setdefault("perf_results", {})[rid] = result
+    return {"id": rid, "status": "saved"}
+
+@app.get("/api/perf/results")
+async def list_perf_results():
+    return list(store.get("perf_results", {}).values())
+
 # ── Frontend ───────────────────────────────────────────────────────────────────
 _fe = Path(__file__).parent.parent / "frontend"
 if _fe.exists():
     app.mount("/", StaticFiles(directory=str(_fe), html=True), name="frontend")
+
+@app.on_event("startup")
+def startup_event():
+    try:
+        from .brain_watcher import start_brain_watcher
+        start_brain_watcher()
+    except Exception as e:
+        print(f"[QAForge Startup] Failed to start brain watcher: {e}")
