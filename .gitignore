@@ -43,3 +43,5 @@ frontend/update_ui.py
 
 # Gemini agent
 .gemini/
+.vercel
+.wrangler/

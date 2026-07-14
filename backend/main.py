@@ -24,8 +24,8 @@ _load_env()
 from .ai_engine import AIEngine, MODEL_LABELS, MODEL_CHAIN
 from .test_executor import TestExecutor
 from .report_gen import ReportGenerator
-from .models import GenerateRequest, ExecuteRequest, BugScanRequest, AppConfig, RangeConfig, ProxyRequest, ApiGenerateRequest, BugFormatRequest
-from .antivirus import AntivirusScanner
+from .models import GenerateRequest, ExecuteRequest, BugScanRequest, AppConfig, RangeConfig, ProxyRequest, ApiGenerateRequest, BugFormatRequest, SeoAuditRequest
+
 
 app = FastAPI(title="QAForge Gemini API", version="4.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -39,6 +39,7 @@ store: dict[str, Any] = {
     "suites":  {},
     "results": {},
     "scans":   {},
+    "seo_audits": {},
     "config": {
         "api_key_1":     _env(1),
         "api_key_2":     _env(2),
@@ -53,11 +54,11 @@ executor = TestExecutor()
 reporter = ReportGenerator()
 
 REPORTS_DIR = Path("reports")
-REPORTS_DIR.mkdir(exist_ok=True)
-QUARANTINE_DIR = Path("reports/quarantine")
-QUARANTINE_DIR.mkdir(exist_ok=True, parents=True)
-
-av_scanner = AntivirusScanner(ai)
+try:
+    REPORTS_DIR.mkdir(exist_ok=True)
+except OSError:
+    REPORTS_DIR = Path("/tmp/reports")
+    REPORTS_DIR.mkdir(exist_ok=True)
 
 # ── Health ─────────────────────────────────────────────────────────────────────
 @app.get("/api/health")
@@ -193,6 +194,21 @@ async def format_bug(req: BugFormatRequest):
     result = await ai.format_bug(req.raw_text, req.app_type, req.severity, req.environment, req.module)
     return result
 
+# ── SEO Audit ──────────────────────────────────────────────────────────────────
+@app.post("/api/audit/seo")
+async def seo_audit(req: SeoAuditRequest):
+    result = await ai.seo_audit(req.url, req.depth)
+    store["seo_audits"][result["scan_id"]] = result
+    return result
+
+@app.get("/api/audit/seo")
+async def list_seo_audits():
+    return list(store["seo_audits"].values())
+
+@app.get("/api/audit/seo/{sid}")
+async def get_seo_audit(sid: str):
+    return _404(store["seo_audits"], sid, "SEO Audit")
+
 # ── Suites ─────────────────────────────────────────────────────────────────────
 @app.get("/api/suites")
 async def list_suites():
@@ -284,57 +300,6 @@ def _404(d, key, label):
         raise HTTPException(404, f"{label} not found")
     return d[key]
 
-# ── ANTIVIRUS SCAN ───────────────────────────────────────────────────────────
-from pydantic import BaseModel
-class DeleteRequest(BaseModel):
-    filepath: str
-
-@app.post("/api/scan/antivirus")
-async def scan_antivirus(file: UploadFile = File(...)):
-    content = await file.read()
-    text_content = content.decode("utf-8", errors="ignore")
-    
-    # Save to quarantine
-    safe_name = f"{str(uuid.uuid4().hex)[:8]}_{file.filename}"  # type: ignore
-    q_path = QUARANTINE_DIR / safe_name
-    q_path.write_bytes(content)
-    
-    report = await av_scanner.scan_hybrid(text_content, file.filename)
-    report["quarantine_path"] = str(q_path)
-    return report
-
-@app.delete("/api/scan/antivirus/delete")
-async def delete_antivirus_file(req: DeleteRequest):
-    try:
-        p = Path(req.filepath)
-        if p.exists() and "quarantine" in p.parts:
-            p.unlink()
-            return {"status": "deleted"}
-        raise HTTPException(404, "File not found or not in quarantine")
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-class DirectoryScanRequest(BaseModel):
-    path: str
-
-@app.post("/api/scan/directory")
-async def scan_directory_endpoint(req: DirectoryScanRequest):
-    try:
-        results = await av_scanner.scan_directory(req.path)
-        return {"status": "success", "threats": results}
-    except Exception as e:
-        raise HTTPException(500, f"Failed to scan directory: {e}")
-
-@app.delete("/api/scan/directory/delete")
-async def delete_deep_threat(req: DeleteRequest):
-    try:
-        p = Path(req.filepath)
-        if p.exists() and p.is_file():
-            p.unlink()
-            return {"status": "deleted"}
-        raise HTTPException(404, "File not found")
-    except Exception as e:
-        raise HTTPException(500, str(e))
 
 # ── API PROXY (for CORS-restricted APIs) ──────────────────────────────────────
 import httpx
@@ -386,7 +351,7 @@ async def proxy_request(req: ProxyRequest):
         raise HTTPException(502, f"Proxy error: {str(e)}")
 
 # ── BLOGS ──────────────────────────────────────────────────────────────────────
-BLOG_CACHE_FILE = Path(__file__).parent.parent / "reports" / "daily_blogs.json"
+BLOG_CACHE_FILE = REPORTS_DIR / "daily_blogs.json"
 
 @app.get("/api/blogs")
 async def get_daily_blogs():

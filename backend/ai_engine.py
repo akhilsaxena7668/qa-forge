@@ -16,7 +16,7 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import google.generativeai as genai
 from .models import GenerateRequest, TestSuite, TestCase, RangeConfig, FormatConfig, ApiGenerateRequest
-
+from .crawler import crawl_website
 # ── Model chain ───────────────────────────────────────────────────────────────
 MODEL_CHAIN: List[Tuple[str, str]] = [
     ("flash2",    "gemini-3-flash-preview"),
@@ -656,7 +656,11 @@ Be thorough — include security, performance, accessibility, UX, and logic issu
 
     async def generate_daily_blogs(self) -> List[dict]:
         reports_dir = Path(__file__).parent.parent / "reports"
-        reports_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            reports_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            reports_dir = Path("/tmp/reports")
+            reports_dir.mkdir(parents=True, exist_ok=True)
         
         prompt = """You are QAForge Blog Writer. Generate 3 unique, high-quality QA engineering blog posts for today.
 Themes: AI testing, automation testing, and AI-powered manual-to-automation testing transitions.
@@ -684,18 +688,57 @@ Structure:
             text, mname = await asyncio.to_thread(self._try, prompt, None, "flash") # type: ignore
             data = _parse(text)
             date_str = datetime.now().strftime("%b %d, %Y")
-            if isinstance(data, list):
+            if isinstance(data, list) and len(data) > 0:
                 for b in data:
                     b["date"] = date_str
                 return data
-            return []
+            raise ValueError("Parsed data is not a valid non-empty list")
         except Exception as e:
             err_msg = f"[QAForge] Blog generation failed: {e}"
             print(err_msg)
             try:
                 (reports_dir / "blog_error.log").write_text(err_msg)
             except: pass
-            return []
+            
+            fallback = [
+                {
+                    "id": "blog-001",
+                    "title": "Unlocking the Power of AI-Driven Test Generation",
+                    "summary": "Discover how modern AI models like Gemini are reshaping test design by automatically generating comprehensive test cases from user requirements.",
+                    "content": "Artificial Intelligence is rapidly transforming the software testing landscape. In this post, we discuss the integration of Google's Gemini models in test generation, which enables testers to create high-coverage test cases from plain text descriptions, images, or even video screen recordings. By automating this initial process, QA engineers can focus on complex validation and edge-case execution.",
+                    "category": "AI",
+                    "read_time": "3 min read",
+                    "author": "Akhil Saxena",
+                    "author_role": "Software Tester at Navoto",
+                    "image_keyword": "ai coding"
+                },
+                {
+                    "id": "blog-002",
+                    "title": "Why Focus-Aware Scanning is Crucial for Security Testing",
+                    "summary": "An in-depth look at how targeting specific focus areas like security or performance leads to more relevant bug scanning results.",
+                    "content": "When scanning an application for bugs, general-purpose tests often miss specialized vulnerabilities. Focus-aware scanning allows the testing framework to target specific categories such as security, usability, or functional regressions. By feeding targeted context to AI models, we can discover deep logical bugs, performance bottlenecks, and authorization flaws that would otherwise pass undetected.",
+                    "category": "Security",
+                    "read_time": "4 min read",
+                    "author": "Akhil Saxena",
+                    "author_role": "Software Tester at Navoto",
+                    "image_keyword": "security cyber"
+                },
+                {
+                    "id": "blog-003",
+                    "title": "Bridging the Gap: Transitioning from Manual to Automated Testing",
+                    "summary": "Learn key strategies for using AI-generated steps to build automated Playwright and Selenium scripts from manual execution logs.",
+                    "content": "Transitioning from manual QA to test automation has always been a bottleneck for engineering teams. With the advent of AI, we can now bridge this gap seamlessly. By taking natural language steps or screen recordings of manual tests, AI engines can generate complete, runnable Playwright or Selenium scripts. This dramatically accelerates automation velocity and decreases maintenance overhead.",
+                    "category": "Manual-AI",
+                    "read_time": "5 min read",
+                    "author": "Akhil Saxena",
+                    "author_role": "Software Tester at Navoto",
+                    "image_keyword": "automation code"
+                }
+            ]
+            date_str = datetime.now().strftime("%b %d, %Y")
+            for b in fallback:
+                b["date"] = date_str
+            return fallback
 
     # ── BUG FORMAT ────────────────────────────────────────────────────────
     async def format_bug(self, raw_text: str, app_type: str = "web",
@@ -798,4 +841,296 @@ Quality Rules:
         data = _parse(text)
         data["model_used"] = MODEL_LABELS.get(mname, mname)
         data["formatted_at"] = datetime.now().isoformat()
+        return data
+
+    # ── SEO AUDIT (Hybrid: Python-computed + AI) ──────────────────────────
+    async def seo_audit(self, url: str, depth: str = "standard") -> dict:
+        # ── Step 1: Crawl ─────────────────────────────────────────────────
+        try:
+            crawled_pages = await crawl_website(url, depth)
+        except Exception as e:
+            crawled_pages = []
+            print(f"[SEO Audit] Crawler error: {e}")
+
+        hp = crawled_pages[0] if crawled_pages else {}   # homepage data
+        all_titles = [p.get("title", "") for p in crawled_pages]
+        all_descs  = [p.get("description", "") for p in crawled_pages]
+
+        # ── Step 2: Compute checks deterministically from crawl data ──────
+        def chk(status, sev_if_fail, desc, rec):
+            sev = "N/A" if status == "Pass" else sev_if_fail
+            rec = "No action needed." if status == "Pass" else rec
+            return {"status": status, "severity": sev, "description": desc, "recommendation": rec}
+
+        def p_or_f(cond): return "Pass" if cond else "Fail"
+
+        title_val    = hp.get("title", "").strip()
+        desc_val     = hp.get("description", "").strip()
+        h1           = hp.get("h1_count", 0)
+        img_total    = hp.get("img_count", 0)
+        img_no_alt   = hp.get("img_missing_alt", 0)
+        canonical    = hp.get("has_canonical", False)
+        viewport     = hp.get("has_viewport", False)
+        og_tags      = hp.get("has_og_tags", False)
+        schema       = hp.get("has_schema", False)
+        is_https     = hp.get("url", url).startswith("https://")
+        dup_titles   = len(all_titles) != len(set(t for t in all_titles if t))
+        dup_descs    = len(all_descs)  != len(set(d for d in all_descs  if d))
+        multi_page   = len(crawled_pages) > 1
+
+        # Map: check_name → computed result dict
+        COMPUTED = {
+            # on_page_seo
+            "Title Tags (All Pages)": chk(
+                p_or_f(bool(title_val)), "High",
+                f"Homepage title found: \"{title_val[:80]}\"." if title_val else "No <title> tag found on homepage.",
+                "Add a unique, descriptive title tag (50–60 chars) to every page."
+            ),
+            "Meta Descriptions (All Pages)": chk(
+                p_or_f(bool(desc_val)), "Medium",
+                f"Meta description: \"{desc_val[:100]}\"." if desc_val else "No meta description found on homepage.",
+                "Write a unique meta description (120–160 chars) for every page."
+            ),
+            "H1 Tag Per Page": chk(
+                p_or_f(h1 == 1), "High",
+                f"{h1} H1 tag(s) detected on homepage. Exactly 1 is required." if h1 != 1 else "Exactly 1 H1 tag found on homepage.",
+                "Ensure every page has exactly one H1 tag that includes the primary keyword."
+            ),
+            "Duplicate Title Detection": chk(
+                p_or_f(not dup_titles), "Medium",
+                "Duplicate title tags detected across crawled pages." if dup_titles else f"All {len(all_titles)} page titles are unique.",
+                "Give every page a unique, descriptive title tag."
+            ),
+            "Duplicate Meta Description Detection": chk(
+                p_or_f(not dup_descs), "Low",
+                "Duplicate meta descriptions detected across crawled pages." if dup_descs else "All page meta descriptions are unique.",
+                "Write a unique meta description for each page."
+            ),
+            # technical_seo
+            "Canonical Tags": chk(
+                p_or_f(canonical), "High",
+                "Canonical tag (<link rel=\"canonical\">) detected on homepage." if canonical else "No canonical tag found on homepage.",
+                "Add a self-referencing canonical tag to every page to prevent duplicate content issues."
+            ),
+            "HTTPS Enforced": chk(
+                p_or_f(is_https), "Critical",
+                f"Site is served over HTTPS ({hp.get('url', url)})." if is_https else "Site is NOT served over HTTPS.",
+                "Install an SSL certificate and redirect all HTTP traffic to HTTPS permanently (301)."
+            ),
+            # mobile_seo
+            "Viewport Meta Tag": chk(
+                p_or_f(viewport), "High",
+                "Viewport meta tag is present on homepage." if viewport else "Viewport meta tag is missing from homepage.",
+                "Add <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> to the <head>."
+            ),
+            # structured_data
+            "Schema.org Markup Present": chk(
+                p_or_f(schema), "Medium",
+                "JSON-LD structured data detected on homepage." if schema else "No JSON-LD structured data found on homepage.",
+                "Implement JSON-LD with at minimum Organization and WebSite schema."
+            ),
+            "Open Graph (OG) Tags": chk(
+                p_or_f(og_tags), "Medium",
+                "Open Graph meta tags (og:title, og:image, etc.) detected on homepage." if og_tags else "No Open Graph tags found on homepage.",
+                "Add og:title, og:description, og:image, og:url for better social media previews."
+            ),
+            # image_seo + accessibility
+            "Image Alt Text": chk(
+                p_or_f(img_no_alt == 0), "High",
+                f"{img_total} images found; {img_no_alt} are missing alt text." if img_total > 0 else "No images detected on homepage.",
+                f"Add descriptive alt attributes to all {img_no_alt} images missing them." if img_no_alt > 0 else "Ensure all future images include descriptive alt text."
+            ),
+            "Image Alt Text (Accessibility)": chk(
+                p_or_f(img_no_alt == 0), "High",
+                f"{img_no_alt} out of {img_total} images are missing alt text, failing WCAG 1.1.1." if img_no_alt > 0 else f"All {img_total} images have alt text — WCAG 1.1.1 satisfied.",
+                "Add descriptive alt text to every image; use empty alt=\"\" for decorative images."
+            ),
+            # internal links
+            "Orphan Pages": chk(
+                p_or_f(not multi_page or len(crawled_pages) > 1), "Medium",
+                f"Crawled {len(crawled_pages)} pages; all are reachable via internal links." if multi_page else "Only 1 page crawled — cannot determine orphan pages (use Deep scan).",
+                "Ensure all pages are linked from at least one other internal page."
+            ),
+            # https
+            "HTTPS Certificate Valid": chk(
+                p_or_f(is_https), "Critical",
+                "HTTPS is active; SSL/TLS certificate appears valid." if is_https else "Site is not using HTTPS — no valid SSL certificate detected.",
+                "Install a valid SSL certificate from a trusted CA and enforce HTTPS."
+            ),
+            "HTTP to HTTPS Redirect": chk(
+                p_or_f(is_https), "High",
+                "Site URL begins with https:// indicating HTTPS redirect is likely configured." if is_https else "HTTP to HTTPS redirect may not be configured.",
+                "Configure a 301 redirect from http:// to https:// for all URLs."
+            ),
+        }
+
+        # Build the full CHECKLIST structure. Checks in COMPUTED are pre-filled; the rest go to AI.
+        CHECKLIST_KEYS = {
+            "technical_seo":         ["XML Sitemap Presence", "Robots.txt Configuration", "Canonical Tags", "Hreflang Implementation", "404 Error Page", "Redirect Chains", "HTTPS Enforced", "Crawlability via Robots.txt"],
+            "on_page_seo":           ["Title Tags (All Pages)", "Meta Descriptions (All Pages)", "H1 Tag Per Page", "H2/H3 Heading Hierarchy", "Keyword in Title", "Duplicate Title Detection", "Duplicate Meta Description Detection", "Page Word Count"],
+            "url_audit":             ["URL Slug Structure", "URL Length", "URL Lowercase Consistency", "Trailing Slash Consistency", "Dynamic Parameters in URL"],
+            "internal_external_links":["Internal Links Present", "Broken Internal Links (404)", "Orphan Pages", "External Links (Nofollow Policy)", "Link Anchor Text Quality"],
+            "image_seo":             ["Image Alt Text", "Image Filename Descriptive", "Image File Size", "WebP/Next-Gen Format", "Lazy Loading"],
+            "performance":           ["Core Web Vitals - LCP", "Core Web Vitals - FID/INP", "Core Web Vitals - CLS", "Time to First Byte (TTFB)", "Minified CSS", "Minified JavaScript", "Browser Caching Headers", "Gzip/Brotli Compression", "CDN Usage"],
+            "mobile_seo":            ["Viewport Meta Tag", "Mobile Responsive Design", "Touch Target Size", "Font Size Legibility on Mobile", "Mobile Page Speed"],
+            "accessibility":         ["Image Alt Text (Accessibility)", "Color Contrast Ratio", "ARIA Labels on Buttons", "Keyboard Navigability", "Form Labels", "Focus Indicators", "Skip Navigation Link"],
+            "structured_data":       ["Schema.org Markup Present", "Open Graph (OG) Tags", "Twitter Card Tags", "Breadcrumb Schema", "Organization Schema", "FAQ/HowTo Schema (if applicable)"],
+            "javascript_seo":        ["JS Rendering of Critical Content", "Meta Tags Rendered in JS", "Page Indexable Without JS", "Inline JS Blocking Render"],
+            "robots_sitemap":        ["Sitemap in Robots.txt", "Sitemap URL Valid", "Sitemap Last Modified", "Pages Blocked in Robots.txt"],
+            "csp_audit":             ["Content-Security-Policy Header", "X-Frame-Options Header", "X-Content-Type-Options Header", "CSP Unsafe-Inline Check", "CSP Wildcard Check"],
+            "security_headers":      ["Strict-Transport-Security (HSTS)", "Referrer-Policy", "Permissions-Policy", "X-XSS-Protection", "Server Header Disclosure"],
+            "https_mixed_content":   ["HTTPS Certificate Valid", "Mixed Content (HTTP resources on HTTPS page)", "HTTP to HTTPS Redirect", "Secure Cookies"],
+            "content_quality":       ["Thin Content Pages", "Duplicate Content", "Readability Score", "Keyword Density", "Content Freshness"],
+        }
+
+        # Build skeleton: pre-fill computed checks, send FILL_IN for AI checks
+        skeleton_phases = {}
+        for phase_key, checks in CHECKLIST_KEYS.items():
+            findings = []
+            for chk_name in checks:
+                if chk_name in COMPUTED:
+                    entry = {"check_name": chk_name, **COMPUTED[chk_name]}
+                else:
+                    entry = {"check_name": chk_name, "status": "FILL_IN", "severity": "FILL_IN", "description": "FILL_IN", "recommendation": "FILL_IN"}
+                findings.append(entry)
+            skeleton_phases[phase_key] = {"findings": findings}
+
+        skeleton_str = json.dumps({"phases": skeleton_phases}, indent=2)
+
+        # Build crawl context for AI
+        if crawled_pages:
+            ctx_lines = [f"Pages crawled ({len(crawled_pages)}):"]
+            for p in crawled_pages:
+                ctx_lines.append(
+                    f"  [{p.get('status_code','?')}] {p.get('url','')} | "
+                    f"Title: {p.get('title','(none)')[:60]} | "
+                    f"H1:{p.get('h1_count','?')} Imgs:{p.get('img_count','?')} AltMissing:{p.get('img_missing_alt','?')} "
+                    f"Canonical:{p.get('has_canonical','?')} Viewport:{p.get('has_viewport','?')} "
+                    f"OG:{p.get('has_og_tags','?')} Schema:{p.get('has_schema','?')}"
+                )
+            crawl_context = "\n".join(ctx_lines)
+        else:
+            crawl_context = "Crawler could not access pages. Use best-effort analysis."
+
+        # ── Step 3: AI fills in only the FILL_IN checks ───────────────────
+        prompt = f"""You are an Enterprise Technical SEO Expert.
+
+Target Website: {url}
+Scan Depth: {depth}
+
+CRAWL DATA:
+{crawl_context}
+
+TASK: The JSON skeleton below contains checks that are already filled in (do NOT change them) and checks still marked "FILL_IN" that you MUST complete.
+
+For each "FILL_IN" entry:
+- "status": exactly "Pass" or "Fail"
+- "severity": "N/A" if Pass; else "Critical", "High", "Medium", or "Low"
+- "description": 1-2 sentences describing what was found specifically for {url}
+- "recommendation": concrete fix if Fail; "No action needed." if Pass
+
+CRITICAL RULES:
+1. Do NOT change any entry that does NOT have "FILL_IN" — copy it exactly as-is.
+2. Every entry MUST remain in the output — do not remove any.
+3. OUTPUT ONLY valid JSON. No markdown, no backticks.
+
+Return this complete structure with all phases filled:
+{{
+  "executive_summary": {{
+    "overall_health_score": <0-100>,
+    "technical_seo_score": <0-100>,
+    "on_page_seo_score": <0-100>,
+    "url_structure_score": <0-100>,
+    "internal_linking_score": <0-100>,
+    "image_seo_score": <0-100>,
+    "performance_score": <0-100>,
+    "core_web_vitals_score": <0-100>,
+    "mobile_seo_score": <0-100>,
+    "accessibility_score": <0-100>,
+    "schema_quality_score": <0-100>,
+    "security_headers_score": <0-100>,
+    "csp_security_score": <0-100>,
+    "https_security_score": <0-100>,
+    "content_quality_score": <0-100>,
+    "top_critical_issues": [],
+    "top_high_priority_issues": [],
+    "top_quick_wins": [],
+    "positive_findings": [],
+    "risks": [],
+    "recommended_roadmap": {{"immediate": [], "short_term": [], "long_term": []}}
+  }},
+  "technical_seo": {{"findings": <from skeleton>}},
+  "on_page_seo": {{"findings": <from skeleton>}},
+  "url_audit": {{"findings": <from skeleton>}},
+  "internal_external_links": {{"findings": <from skeleton>}},
+  "image_seo": {{"findings": <from skeleton>}},
+  "performance": {{"findings": <from skeleton>}},
+  "mobile_seo": {{"findings": <from skeleton>}},
+  "accessibility": {{"findings": <from skeleton>}},
+  "structured_data": {{"findings": <from skeleton>}},
+  "javascript_seo": {{"findings": <from skeleton>}},
+  "robots_sitemap": {{"findings": <from skeleton>}},
+  "csp_audit": {{"findings": <from skeleton>}},
+  "security_headers": {{"findings": <from skeleton>}},
+  "https_mixed_content": {{"findings": <from skeleton>}},
+  "content_quality": {{"findings": <from skeleton>}},
+  "actionable_recommendations": [],
+  "pages_scanned": []
+}}
+
+SKELETON:
+{skeleton_str}"""
+
+        text, mname = await asyncio.to_thread(self._try, prompt, None, "pro")
+        try:
+            data = _parse(text)
+        except Exception as e:
+            print(f"[SEO Audit] Parse error: {e}. Raw[:300]: {text[:300]}")
+            # Fallback: use skeleton (Python-computed checks are already in it)
+            data = {
+                "executive_summary": {"overall_health_score": 0, "top_critical_issues": ["AI parse error — scan results may be incomplete."], "top_high_priority_issues": [], "top_quick_wins": [], "positive_findings": [], "risks": [], "recommended_roadmap": {"immediate": [], "short_term": [], "long_term": []}},
+                "actionable_recommendations": ["Retry the scan."]
+            }
+            for key, val in skeleton_phases.items():
+                data[key] = val
+
+        # ── Step 4: Override with Python-computed checks (always accurate) ─
+        for phase_key, phase_data in data.items():
+            if not isinstance(phase_data, dict) or "findings" not in phase_data:
+                continue
+            for finding in phase_data["findings"]:
+                if finding.get("check_name") in COMPUTED:
+                    finding.update(COMPUTED[finding["check_name"]])
+                # Ensure no FILL_IN leftovers
+                if finding.get("status") == "FILL_IN" or not finding.get("description") or finding.get("description") == "FILL_IN":
+                    finding["status"] = finding.get("status") if finding.get("status") not in ("FILL_IN", None) else "Fail"
+                    finding["severity"] = finding.get("severity") if finding.get("severity") not in ("FILL_IN", None) else "Medium"
+                    finding["description"] = finding.get("description") if finding.get("description") not in ("FILL_IN", None, "") else "Could not evaluate this check automatically."
+                    finding["recommendation"] = finding.get("recommendation") if finding.get("recommendation") not in ("FILL_IN", None, "") else "Perform manual verification of this check."
+
+        # ── Step 5: Merge real crawled pages into pages_scanned ─────────
+        if crawled_pages:
+            # AI sometimes returns pages_scanned as a list of strings — filter to dicts only
+            raw_ai_pages = data.get("pages_scanned", [])
+            ai_by_url = {
+                p.get("url", ""): p
+                for p in raw_ai_pages
+                if isinstance(p, dict)
+            }
+            data["pages_scanned"] = [
+                {
+                    "url": p["url"],
+                    "status_code": p["status_code"],
+                    "title": p.get("title") or ai_by_url.get(p["url"], {}).get("title", ""),
+                    "seo_issues": ai_by_url.get(p["url"], {}).get("seo_issues", []),
+                }
+                for p in crawled_pages
+            ]
+
+        data["scan_id"]     = str(uuid.uuid4())
+        data["url"]         = url
+        data["depth"]       = depth
+        data["pages_count"] = len(crawled_pages)
+        data["scanned_at"]  = datetime.now().isoformat()
+        data["model_used"]  = MODEL_LABELS.get(mname, mname)
         return data

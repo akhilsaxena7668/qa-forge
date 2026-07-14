@@ -6,8 +6,8 @@ QAForge is a comprehensive testing platform designed to streamline quality assur
 - `backend/`: API services and AI backend
   - `__init__.py` - [New File]
   - `ai_engine.py` - Gemini AI integration (4 specialized models, prompt engineering)
-  - `antivirus.py` - Security file scanner (simulated file safety analysis)
   - `brain_watcher.py` - [New File]
+  - `crawler.py` - [New File]
   - `main.py` - FastAPI application (routes, middleware, configuration)
   - `models.py` - Pydantic data schemas (TestPlan, TestCase, ExecResult)
   - `report_gen.py` - Report builder (generates Excel with charts, HTML, JSON)
@@ -61,15 +61,18 @@ QAForge is a comprehensive testing platform designed to streamline quality assur
   - `scan_087023eb.json` - [New File]
   - `suite_fdc2be8c.json` - [New File]
 - Root files:
+  - `QAForge_Presentation.pptx` - [New File]
   - `README.md` - Setup and execution guide
   - `debug_swarm.py` - Debug script to test multi-model swarms
   - `error.log` - [New File]
   - `genai_init.py` - Quick setup initializer for Google Gemini API key
+  - `generate_ppt.py` - [New File]
   - `package-lock.json` - [New File]
   - `qaforge_launcher.py` - Interactive/standalone server launcher wrapper
   - `requirements.txt` - Python project dependencies
   - `run.py` - Standard launcher script to run backend server
   - `start.sh` - Simple startup bash shell script
+  - `vercel.json` - [New File]
 
 
 # Objectives

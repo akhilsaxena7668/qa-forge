@@ -25,6 +25,7 @@ let curFw = 'playwright';
 let curLang = 'javascript';
 let curFormat = 'detailed';
 let curDepth = 'quick';
+let curScanDepth = 'quick';
 let generatedFiles = {};
 let activeCodeFile = 'main';
 let formatTemplates = [];
@@ -51,6 +52,26 @@ document.addEventListener('DOMContentLoaded', () => {
   renderFieldPills();
   updateFocusNote();
   updateLangOpts();
+
+  // Vercel-specific UI Hiding
+  const isVercel = window.location.hostname.endsWith('vercel.app') || window.location.hostname.includes('vercel');
+  if (isVercel) {
+    // Hide navbar buttons
+    document.querySelectorAll('.ntab[data-p="execute"], .ntab[data-p="automate"], .ntab[data-p="reports"]').forEach(el => el.style.display = 'none');
+    // Hide buttons in generate page (the output panels)
+    document.querySelectorAll('.bsm-a, .bsm-auto').forEach(el => el.style.display = 'none');
+    // Hide automate button on landing/home page
+    document.querySelectorAll('button[onclick="nav(\'automate\')"]').forEach(el => el.style.display = 'none');
+    // Hide automation config tab in Settings sidebar
+    document.querySelectorAll('.csb-item[data-tab="automation"]').forEach(el => el.style.display = 'none');
+    // Hide Step 4 in setup guide
+    document.querySelectorAll('.sg').forEach(el => {
+      if (el.textContent.includes('Generate & Automate')) {
+        el.style.display = 'none';
+      }
+    });
+  }
+
   handleHashNavigation();
   window.addEventListener('hashchange', handleHashNavigation);
   setInterval(checkHealth, 20000);
@@ -58,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ═══════ PREFS ═══════
 function loadSavedPrefs() {
-  const theme = localStorage.getItem('qaf-theme') || 'cyber';
+  const theme = localStorage.getItem('qaf-theme') || 'ice';
   const font = localStorage.getItem('qaf-font') || 'jetbrains';
   const density = localStorage.getItem('qaf-density') || 'normal';
   applyTheme(theme); applyFont(font); applyDensity(density);
@@ -91,8 +112,27 @@ function setDensity(btn, d) {
 }
 function applyDensity(d) { document.body.setAttribute('data-density', d); }
 
+function setDepth(btn) {
+  const row = btn.closest('.depth-row');
+  if (row) {
+    row.querySelectorAll('.dep').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const val = btn.dataset.d;
+  if (btn.closest('#p-bugscan')) {
+    curScanDepth = val;
+  } else {
+    curDepth = val;
+  }
+}
+
 // ═══════ NAV ═══════
 function nav(page) {
+  const isVercel = window.location.hostname.endsWith('vercel.app') || window.location.hostname.includes('vercel');
+  if (isVercel && ['execute', 'automate', 'reports'].includes(page)) {
+    nav('generate');
+    return;
+  }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.ntab').forEach(b => b.classList.remove('active'));
   document.getElementById(`p-${page}`)?.classList.add('active');
@@ -108,15 +148,22 @@ function nav(page) {
   if (page === 'reports') loadReportList();
   if (page === 'apitest') { if (typeof initApiTester === 'function') initApiTester(); }
   if (page === 'perftest') { if (typeof initPerfTester === 'function') initPerfTester(); }
+  if (page === 'seoaudit') { if (typeof initSeoAudit === 'function') initSeoAudit(); }
   if (page === 'settings') { loadCfgUI(); renderFmtTemplateList(); }
 }
 
 function handleHashNavigation() {
   const hash = window.location.hash.slice(1);
   if (hash) {
-    const validPages = ['home', 'generate', 'bugscan', 'bugformat', 'antivirus', 'apitest', 'perftest', 'execute', 'automate', 'reports', 'settings'];
+    let validPages = ['home', 'generate', 'bugscan', 'bugformat', 'seoaudit', 'apitest', 'perftest', 'execute', 'automate', 'reports', 'settings'];
+    const isVercel = window.location.hostname.endsWith('vercel.app') || window.location.hostname.includes('vercel');
+    if (isVercel) {
+      validPages = validPages.filter(p => !['execute', 'automate', 'reports'].includes(p));
+    }
     if (validPages.includes(hash)) {
       nav(hash);
+    } else if (isVercel && ['execute', 'automate', 'reports'].includes(hash)) {
+      nav('generate');
     }
   }
 }
@@ -702,105 +749,6 @@ function goExec() { if (curSuiteId) { selExecId = curSuiteId; nav('execute'); } 
 function goAutomate() { if (curSuiteId) { autoSelId = curSuiteId; nav('automate'); } }
 async function dlSuite() { if (curSuiteId) window.location.href = `/api/suites/${curSuiteId}/download`; }
 
-// ═══════ BUG SCAN ═══════
-function setDepth(btn) { document.querySelectorAll('.dep').forEach(b => b.classList.remove('active')); btn.classList.add('active'); curDepth = btn.dataset.d; }
-async function runBugScan() {
-  document.getElementById('scanLoad').classList.remove('hidden');
-  document.getElementById('scanEmpty').style.display = 'none';
-  document.getElementById('scanOut').classList.add('hidden');
-  document.getElementById('srActs').style.display = 'none';
-  try {
-    const r = await post('/api/scan/bugs', { app_type: v('scanType'), description: v('scanDesc'), url: v('scanUrl') || null, depth: curDepth, categories: getChips('scan-cats') });
-    curScanId = r.scan_id; curScanRes = r; showBugScan(r); loadStats();
-  } catch (e) { toast(e.message, 'err'); }
-  finally { document.getElementById('scanLoad').classList.add('hidden'); }
-}
-function showBugScan(r) {
-  document.getElementById('scanOut').classList.remove('hidden');
-  document.getElementById('srActs').style.display = '';
-  const cl = { critical: 'var(--cr)', high: 'var(--ch)', medium: 'var(--cm)', low: 'var(--t3)' };
-  const c = cl[r.risk_level] || 'var(--t2)';
-  document.getElementById('scanSummary').innerHTML = `
-    <div class="ss-box"><div class="ss-n" style="color:${c}">${r.total_issues}</div><div class="ss-l">Total</div></div>
-    <div class="ss-box"><div class="ss-n" style="color:${c}">${(r.risk_level || '').toUpperCase()}</div><div class="ss-l">Risk Level</div></div>
-    <div class="ss-box"><div class="ss-n" style="color:var(--cr)">${r.bugs?.filter(b => b.severity === 'critical').length || 0}</div><div class="ss-l">Critical</div></div>
-    <div class="ss-box"><div class="ss-n" style="color:var(--ch)">${r.bugs?.filter(b => b.severity === 'high').length || 0}</div><div class="ss-l">High</div></div>`;
-  const sevs = [...new Set(r.bugs.map(b => b.severity))];
-  document.getElementById('bugFilters').innerHTML = `<button class="bfilt on" onclick="filtBugs('all',this)">ALL (${r.bugs.length})</button>` + sevs.map(s => `<button class="bfilt" onclick="filtBugs('${s}',this)">${s.toUpperCase()} (${r.bugs.filter(b => b.severity === s).length})</button>`).join('');
-  renderBugs(r.bugs);
-  if (r.recommendations?.length) document.getElementById('scanRecs').innerHTML = `<div class="recs-title">RECOMMENDATIONS</div><ul class="rec-list">${r.recommendations.map(rc => `<li class="rec-item">${rc}</li>`).join('')}</ul>`;
-  toast(`Found ${r.total_issues} issues — ${r.risk_level} risk`, r.risk_level === 'critical' ? 'err' : 'inf');
-}
-function filtBugs(sev, btn) { document.querySelectorAll('.bfilt').forEach(b => b.classList.remove('on')); btn.classList.add('on'); renderBugs(sev === 'all' ? curScanRes.bugs : curScanRes.bugs.filter(b => b.severity === sev)); }
-function renderBugs(bugs) {
-  document.getElementById('bugList').innerHTML = bugs.map(b => `
-    <div class="bug-item sev-${b.severity}" onclick="this.querySelector('.bug-detail').classList.toggle('open')">
-      <div class="bug-top"><span class="bug-id">${b.id}</span><span class="bug-title">${b.title}</span>
-        <div class="rv-badges"><span class="bdg bdg-${b.severity}">${b.severity}</span><span class="bdg" style="color:var(--t2);border-color:var(--b)">${b.category}</span>${b.cwe ? `<span class="cwe">${b.cwe}</span>` : ''}</div>
-      </div>
-      <div class="bug-desc">${b.description}</div>
-      <div class="bug-detail">
-        <div class="bug-field"><span class="bf-lbl">Location</span><span>${b.location}</span></div>
-        <div class="bug-field"><span class="bf-lbl">Impact</span><span>${b.impact}</span></div>
-        ${b.steps_to_reproduce?.length ? `<div class="bug-field"><span class="bf-lbl">Steps</span><div>${b.steps_to_reproduce.map((s, i) => `<div style="font-family:var(--fm);font-size:.59rem;color:var(--t2)">${i + 1}. ${s}</div>`).join('')}</div></div>` : ''}
-        <div class="fix-box"><div class="fix-lbl">✓ Fix</div><div class="fix-txt">${b.fix_suggestion}</div></div>
-      </div>
-    </div>`).join('');
-}
-async function dlScan() { if (curScanId) window.location.href = `/api/scans/${curScanId}/download`; }
-
-// ═══════ EXECUTE ═══════
-async function loadSuiteList() {
-  try {
-    const suites = await get('/api/suites'), el = document.getElementById('suiteList');
-    if (!suites.length) { el.innerHTML = '<div class="empty-sm">Generate a suite first.</div>'; return; }
-    el.innerHTML = suites.map(s => `<div class="suite-card${s.id === selExecId ? ' sel' : ''}" onclick="selSuite(this,'${s.id}')"><div class="sc-name">${s.name}${s.range_max ? `<span class="sc-range">${s.range_min}–${s.range_max}</span>` : ''}</div><div class="sc-meta">${s.tests?.length || 0} tests · ${s.app_type?.toUpperCase()} · ${s.model_used || 'Gemini'}</div></div>`).join('');
-    if (selExecId) document.getElementById('execCfg').style.display = 'flex';
-  } catch { }
-}
-function selSuite(el, id) { document.querySelectorAll('.suite-card').forEach(c => c.classList.remove('sel')); el.classList.add('sel'); selExecId = id; document.getElementById('execCfg').style.display = 'flex'; }
-async function runSuite() {
-  if (!selExecId) return toast('Select a suite', 'err');
-  document.getElementById('execLive').classList.remove('hidden');
-  document.getElementById('execIdle').style.display = 'none';
-  document.getElementById('liveFeed').innerHTML = '';
-  document.getElementById('runSummary').classList.add('hidden');
-  document.getElementById('runDls').classList.add('hidden');
-  document.getElementById('runFill').style.width = '0%';
-  document.getElementById('runPct').textContent = '0%';
-  try {
-    const r = await post(`/api/execute/${selExecId}`, { environment: v('execEnv'), base_url: v('execUrl') || null });
-    lastRunId = r.run_id; pollRun(r.run_id);
-  } catch (e) { toast(e.message, 'err'); }
-}
-function pollRun(runId) {
-  if (pollTimer) clearInterval(pollTimer); let last = 0;
-  pollTimer = setInterval(async () => {
-    try {
-      const r = await get(`/api/results/${runId}`);
-      document.getElementById('runFill').style.width = r.progress + '%';
-      document.getElementById('runPct').textContent = r.progress + '%';
-      document.getElementById('runInfo').textContent = `Run ${runId.slice(0, 8)} · ${r.environment?.toUpperCase()} · ${r.status.toUpperCase()}`;
-      for (let i = last; i < r.tests.length; i++) {
-        const t = r.tests[i], p = t.status === 'pass', row = document.createElement('div');
-        row.className = `fi-row ${p ? 'pass' : 'fail'}`;
-        row.innerHTML = `<span class="fi-ico">${p ? '✓' : '✗'}</span><span class="fi-name">${t.test_id} — ${t.test_name}</span><span class="fi-dur">${t.duration_ms}ms</span>`;
-        document.getElementById('liveFeed').appendChild(row);
-        row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-      last = r.tests.length;
-      if (r.status === 'completed') {
-        clearInterval(pollTimer); const s = r.summary;
-        document.getElementById('runSummary').innerHTML = `<div><div class="rs-num">${s.total}</div><div class="rs-lbl">Total</div></div><div><div class="rs-num c-pass">${s.passed}</div><div class="rs-lbl">Passed</div></div><div><div class="rs-num c-fail">${s.failed}</div><div class="rs-lbl">Failed</div></div><div><div class="rs-num c-rate">${s.pass_rate}%</div><div class="rs-lbl">Pass Rate</div></div>`;
-        document.getElementById('runSummary').classList.remove('hidden');
-        document.getElementById('runDls').classList.remove('hidden');
-        toast(`Done: ${s.passed}/${s.total} passed (${s.pass_rate}%)`, s.pass_rate >= 80 ? 'ok' : 'warn');
-        loadStats(); loadReportList();
-      }
-    } catch { clearInterval(pollTimer); }
-  }, 700);
-}
-async function dlReport(fmt) { if (!lastRunId) return toast('No run yet', 'err'); try { const r = await post(`/api/reports/${lastRunId}?fmt=${fmt}`); window.location.href = `/api/reports/download/${r.filename}`; } catch (e) { toast(e.message, 'err'); } }
 
 // ═══════ AUTOMATE — REAL SCRIPTS ═══════
 function pickFw(btn) {
@@ -1120,6 +1068,164 @@ function v(id) { return document.getElementById(id)?.value || ''; }
 function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
 function toast(msg, type = 'inf') { const t = document.getElementById('toast'); t.textContent = msg; t.className = `toast ${type}`; clearTimeout(t._t); t._t = setTimeout(() => t.className = 'toast hidden', 3500); }
 
+// ═══════ BUG SCANNER ═══════
+async function runBugScan() {
+  const desc = v('scanDesc').trim();
+  const appType = v('scanType');
+  const url = v('scanUrl').trim();
+  const cats = [...document.querySelectorAll('#scan-cats .chip.on')].map(c => c.dataset.v);
+
+  // Show loading state
+  document.getElementById('scanLoad').classList.remove('hidden');
+  document.getElementById('scanEmpty').style.display = 'none';
+  document.getElementById('scanOut').classList.add('hidden');
+  document.getElementById('srActs').style.display = 'none';
+
+  try {
+    const res = await post('/api/scan/bugs', {
+      app_type: appType,
+      description: desc || null,
+      url: url || null,
+      depth: curScanDepth,
+      categories: cats
+    });
+
+    curScanRes = res;
+    curScanId = res.scan_id;
+
+    document.getElementById('scanLoad').classList.add('hidden');
+    showScanResults(res);
+  } catch (e) {
+    document.getElementById('scanLoad').classList.add('hidden');
+    document.getElementById('scanEmpty').style.display = '';
+    toast(e.message, 'err');
+  }
+}
+
+function showScanResults(res) {
+  document.getElementById('scanOut').classList.remove('hidden');
+  document.getElementById('srActs').style.display = 'flex';
+
+  // 1. Render Summary
+  const riskColor = getRiskColor(res.risk_level);
+  document.getElementById('scanSummary').innerHTML = `
+    <div class="ss-box">
+      <div class="ss-n" style="color:${riskColor}">${(res.risk_level || 'low').toUpperCase()}</div>
+      <div class="ss-l">RISK LEVEL</div>
+    </div>
+    <div class="ss-box">
+      <div class="ss-n">${res.total_issues || res.bugs?.length || 0}</div>
+      <div class="ss-l">TOTAL ISSUES</div>
+    </div>
+    <div class="ss-box">
+      <div class="ss-n" style="font-size:1.1rem; padding-top:0.4rem;">${(res.depth || 'standard').toUpperCase()}</div>
+      <div class="ss-l">DEPTH</div>
+    </div>
+    <div class="ss-box" style="flex: 1; text-align: left; min-width: 200px;">
+      <div class="ss-l" style="margin-top: 0;">SUMMARY</div>
+      <div style="font-size: 0.8rem; line-height: 1.4; color: var(--t2); margin-top: 4px;">${res.summary || 'No summary provided.'}</div>
+    </div>
+  `;
+
+  // 2. Render Filters
+  const categories = ['all', ...new Set((res.bugs || []).map(b => (b.category || 'other').toLowerCase()))];
+  document.getElementById('bugFilters').innerHTML = categories.map(cat => {
+    return `<button class="bfilt ${cat === 'all' ? 'on' : ''}" onclick="filterBugs('${cat}', this)">${cat.toUpperCase()}</button>`;
+  }).join('');
+
+  // 3. Render Bugs List
+  const bugList = document.getElementById('bugList');
+  if (res.bugs && res.bugs.length) {
+    bugList.innerHTML = res.bugs.map(bug => {
+      const bugColor = getRiskColor(bug.severity);
+      const stepsHtml = bug.steps_to_reproduce && bug.steps_to_reproduce.length
+        ? `<div class="bug-field" style="flex-direction:column; gap:4px; margin-top:0.5rem;">
+             <span class="bf-lbl">STEPS TO REPRODUCE:</span>
+             <div style="padding-left: 10px;">
+               ${bug.steps_to_reproduce.map((step, idx) => `<div style="margin-bottom:2px;">${idx + 1}. ${step}</div>`).join('')}
+             </div>
+           </div>`
+        : '';
+
+      return `
+        <div class="bug-item sev-${(bug.severity || 'low').toLowerCase()}" data-category="${(bug.category || 'other').toLowerCase()}" onclick="toggleBugDetail(this)">
+          <div class="bug-top">
+            <span class="bug-id">${bug.id || 'BUG'}</span>
+            <span class="bug-title">${bug.title || 'Untitled Bug'}</span>
+            <span class="bug-prio" style="font-family:var(--fm); font-size:0.7rem; color:${bugColor}; font-weight:bold;">${(bug.severity || 'low').toUpperCase()}</span>
+          </div>
+          <div class="bug-desc">${bug.description || 'No description provided.'}</div>
+          <div class="bug-detail" onclick="event.stopPropagation()">
+            ${bug.location ? `<div class="bug-field"><span class="bf-lbl">LOCATION:</span><span>${bug.location}</span></div>` : ''}
+            ${bug.impact ? `<div class="bug-field"><span class="bf-lbl">IMPACT:</span><span>${bug.impact}</span></div>` : ''}
+            ${bug.cwe ? `<div class="bug-field"><span class="bf-lbl">CWE:</span><span class="cwe">${bug.cwe}</span></div>` : ''}
+            ${stepsHtml}
+            ${bug.fix_suggestion ? `
+              <div class="fix-box">
+                <div class="fix-lbl">FIX SUGGESTION</div>
+                <div class="fix-txt">${bug.fix_suggestion}</div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } else {
+    bugList.innerHTML = '<div class="empty-sm">No issues detected.</div>';
+  }
+
+  // 4. Render Recommendations
+  const recsContainer = document.getElementById('scanRecs');
+  if (res.recommendations && res.recommendations.length) {
+    recsContainer.innerHTML = `
+      <div class="recs-title">RECOMMENDATIONS</div>
+      <ul class="rec-list">
+        ${res.recommendations.map(rec => `<li class="rec-item">${rec}</li>`).join('')}
+      </ul>
+    `;
+    recsContainer.style.display = 'block';
+  } else {
+    recsContainer.style.display = 'none';
+  }
+
+  toast('✓ Bug scan completed successfully!', 'ok');
+}
+
+function getRiskColor(level) {
+  const colors = { critical: 'var(--cr)', high: 'var(--ch)', medium: 'var(--cm)', low: 'var(--t3)', info: 'var(--t2)' };
+  return colors[(level || '').toLowerCase()] || 'var(--t2)';
+}
+
+function filterBugs(category, btn) {
+  const container = btn.closest('.bug-filters');
+  if (container) {
+    container.querySelectorAll('.bfilt').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+  }
+
+  const bugItems = document.querySelectorAll('.bug-item');
+  bugItems.forEach(item => {
+    const itemCat = item.dataset.category;
+    if (category === 'all' || itemCat === category) {
+      item.style.display = 'block';
+    } else {
+      item.style.display = 'none';
+    }
+  });
+}
+
+function toggleBugDetail(el) {
+  const detail = el.querySelector('.bug-detail');
+  if (detail) {
+    detail.classList.toggle('open');
+  }
+}
+
+function dlScan() {
+  if (!curScanId) return toast('No scan to download', 'err');
+  window.location.href = `/api/scans/${curScanId}/download`;
+}
+
 // ═══════ BUG REPORT GENERATOR ═══════
 let lastBugReport = null;
 
@@ -1286,143 +1392,211 @@ function downloadBugReport() {
   toast('Bug report downloaded as JSON', 'ok');
 }
 
-// ═══════ ANTIVIRUS ═══════
-let avFile = null;
-let lastAvQPath = null;
+// ══════════ SEO AUDIT ══════════
+async function runSeoAudit() {
+  const url = document.getElementById('seoUrlInput').value.trim();
+  const depth = document.getElementById('seoDepthSelect').value;
+  if (!url) return alert('Please enter a website URL');
 
-function handleAvSelect(e) {
-  const f = e.target.files[0];
-  if (!f) return;
-  avFile = f;
-  document.getElementById('avFileName').textContent = f.name;
-}
+  const btn = document.getElementById('seoRunBtn');
+  const load = document.getElementById('seoLoad');;
+  const out = document.getElementById('seoResults');
+  const pdfBtn = document.getElementById('seoPdfBtn');
 
-async function startAvScan() {
-  if (!avFile) return toast('Please select a file first', 'warn');
-
-  const fd = new FormData();
-  fd.append('file', avFile);
-
-  document.getElementById('avResults').classList.add('hidden');
-  document.getElementById('avLoad').classList.remove('hidden');
-  document.getElementById('btnAvScan').disabled = true;
+  btn.disabled = true;
+  load.classList.remove('hidden');
+  out.classList.add('hidden');
+  pdfBtn.classList.add('hidden');
 
   try {
-    const res = await fetch('http://localhost:8000/api/scan/antivirus', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Scan failed');
-
-    document.getElementById('avLoad').classList.add('hidden');
-    document.getElementById('avResults').classList.remove('hidden');
-
-    const rl = data.risk_level;
-    const rEl = document.getElementById('avRisk');
-    rEl.textContent = rl.toUpperCase();
-    rEl.style.color = rl === 'Safe' ? 'var(--ac2)' : (rl === 'Suspicious' ? 'var(--cm)' : 'var(--cr)');
-
-    const dBtn = document.getElementById('btnAvDelete');
-    if (rl !== 'Safe') {
-      dBtn.classList.remove('hidden');
-      lastAvQPath = data.quarantine_path || null;
-    } else {
-      dBtn.classList.add('hidden');
-      lastAvQPath = null;
+    const res = await post('/api/audit/seo', { url, depth });
+    if (!res || typeof res !== 'object') throw new Error('Server returned empty response');
+    try {
+      renderSeoResults(res);
+    } catch (renderErr) {
+      console.error('[SEO] Render error:', renderErr, res);
+      out.innerHTML = `<div class="empty-st" style="color:var(--cr)">⚠ Display error: ${renderErr.message}<br><small>Check the browser console for details.</small></div>`;
     }
-
-    const offEl = document.getElementById('avOffline');
-    if (data.offline_findings && data.offline_findings.length > 0) {
-      offEl.innerHTML = data.offline_findings.map(f => `<span class="bfilt on">${f}</span>`).join('');
-    } else {
-      offEl.innerHTML = '<span class="bfilt">None Detected</span>';
-    }
-
-    document.getElementById('avAiReport').innerHTML = (data.ai_analysis || '').replace(/\n/g, '<br>');
-
+    out.classList.remove('hidden');
+    pdfBtn.classList.remove('hidden');
   } catch (e) {
-    document.getElementById('avLoad').classList.add('hidden');
-    toast(e.message, 'err');
+    console.error('[SEO] Request error:', e);
+    alert('SEO Audit failed: ' + (e.message || 'Unknown error. Check the browser console.'));
   } finally {
-    document.getElementById('btnAvScan').disabled = false;
+    btn.disabled = false;
+    load.classList.add('hidden');
   }
 }
 
-async function deleteThreat() {
-  if (!lastAvQPath) return;
-  if (!confirm('WARNING: Are you sure you want to PERMANENTLY delete this quarantined threat? This cannot be undone.')) return;
-  try {
-    const res = await fetch('http://localhost:8000/api/scan/antivirus/delete', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filepath: lastAvQPath })
-    });
-    if (!res.ok) throw new Error('Delete failed');
-    toast('Threat file securely deleted from server quarantine!', 'ok');
-    document.getElementById('btnAvDelete').classList.add('hidden');
-    document.getElementById('avRisk').textContent = 'DELETED';
-    document.getElementById('avRisk').style.color = 'var(--t3)';
-  } catch (e) {
-    toast(e.message, 'err');
+function renderSeoResults(data) {
+  const out = document.getElementById('seoResults');
+  out.innerHTML = '';
+  
+  if (!data || !data.executive_summary) {
+    out.innerHTML = '<div class="empty-st">Invalid report data generated.</div>';
+    return;
   }
-}
 
-async function startDeepScan() {
-  const p = v('avDirPath');
-  if (!p) return toast('Please enter a directory path', 'warn');
+  const ex = data.executive_summary;
+  
+  let html = `
+    <div class="seo-exec-summary">
+      <div class="seo-score-card">
+        <h3>Overall Health</h3>
+        <div class="seo-score-val ${ex.overall_health_score >= 80 ? 'score-high' : ex.overall_health_score >= 50 ? 'score-med' : 'score-low'}">${ex.overall_health_score || 0}</div>
+      </div>
+      <div class="seo-score-card">
+        <h3>Technical SEO</h3>
+        <div class="seo-score-val ${ex.technical_seo_score >= 80 ? 'score-high' : ex.technical_seo_score >= 50 ? 'score-med' : 'score-low'}">${ex.technical_seo_score || 0}</div>
+      </div>
+      <div class="seo-score-card">
+        <h3>Performance</h3>
+        <div class="seo-score-val ${ex.performance_score >= 80 ? 'score-high' : ex.performance_score >= 50 ? 'score-med' : 'score-low'}">${ex.performance_score || 0}</div>
+      </div>
+      <div class="seo-score-card">
+        <h3>Security/CSP</h3>
+        <div class="seo-score-val ${ex.csp_security_score >= 80 ? 'score-high' : ex.csp_security_score >= 50 ? 'score-med' : 'score-low'}">${ex.csp_security_score || 0}</div>
+      </div>
+      <div class="seo-score-card">
+        <h3>Accessibility</h3>
+        <div class="seo-score-val ${ex.accessibility_score >= 80 ? 'score-high' : ex.accessibility_score >= 50 ? 'score-med' : 'score-low'}">${ex.accessibility_score || 0}</div>
+      </div>
+    </div>
+    
+    <div class="seo-lists">
+      <div class="seo-list-card">
+        <h3>Critical Issues</h3>
+        <ul>${(ex.top_critical_issues || []).map(i => `<li>${i}</li>`).join('') || '<li>None</li>'}</ul>
+      </div>
+      <div class="seo-list-card">
+        <h3>Quick Wins</h3>
+        <ul>${(ex.top_quick_wins || []).map(i => `<li>${i}</li>`).join('') || '<li>None</li>'}</ul>
+      </div>
+    </div>
+  `;
 
-  document.getElementById('dsResults').classList.add('hidden');
-  document.getElementById('dsLoad').classList.remove('hidden');
-  document.getElementById('btnDeepScan').disabled = true;
+  const phases = [
+    { key: 'technical_seo',          title: 'Technical SEO' },
+    { key: 'on_page_seo',            title: 'On-Page SEO' },
+    { key: 'url_audit',              title: 'URL Audit' },
+    { key: 'internal_external_links',title: 'Internal & External Links' },
+    { key: 'image_seo',              title: 'Image SEO' },
+    { key: 'performance',            title: 'Performance & Core Web Vitals' },
+    { key: 'mobile_seo',             title: 'Mobile SEO' },
+    { key: 'accessibility',          title: 'Accessibility (WCAG)' },
+    { key: 'structured_data',        title: 'Structured Data & Schema' },
+    { key: 'javascript_seo',         title: 'JavaScript SEO' },
+    { key: 'robots_sitemap',         title: 'Robots.txt & Sitemap' },
+    { key: 'csp_audit',              title: 'Content Security Policy (CSP)' },
+    { key: 'security_headers',       title: 'Security Headers' },
+    { key: 'https_mixed_content',    title: 'HTTPS & Mixed Content' },
+    { key: 'content_quality',        title: 'Content Quality' },
+  ];
 
-  try {
-    const data = await post('http://localhost:8000/api/scan/directory', { path: p });
-    document.getElementById('dsLoad').classList.add('hidden');
-    document.getElementById('dsResults').classList.remove('hidden');
 
-    const thr = data.threats || [];
-    document.getElementById('dsThreatCount').textContent = thr.length;
+  phases.forEach(p => {
+    const phaseData = data[p.key] || { findings: [] };
+    const findings = Array.isArray(phaseData.findings) ? phaseData.findings : [];
+    if (findings.length === 0) return;
 
-    const tbody = document.getElementById('dsTbody');
-    if (thr.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--ac2);padding:1rem;">No threats found! System clean.</td></tr>';
-    } else {
-      tbody.innerHTML = thr.map((t, idx) => `
-        <tr id="threat-${idx}">
-          <td style="color:${t.risk_level === 'Malicious' ? 'var(--cr)' : 'var(--cm)'};padding:0.5rem;"><b>${t.risk_level.toUpperCase()}</b></td>
-          <td style="word-break:break-all;padding:0.5rem;" title="${t.filepath.replace(/\"/g, '&quot;')}">${t.filename}</td>
-          <td style="padding:0.5rem;">${t.offline_findings.join(', ')}</td>
-          <td style="padding:0.5rem;">
-            <button class="btn-scan" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; margin: 0; background: var(--hr);" onclick="deleteDeepThreat('${t.filepath.replace(/\\/g, '\\\\').replace(/\'/g, '\\\'')}', ${idx})">DELETE</button>
-          </td>
+    let passCount = findings.filter(f => (f.status || '').toLowerCase() === 'pass').length;
+    let failCount = findings.length - passCount;
+
+    let issuesHtml = findings.map(f => {
+      if (!f || typeof f !== 'object') return '';
+      const status = (f.status || 'Unknown').toUpperCase();
+      const isPass = status === 'PASS';
+      const sev = (f.severity || (isPass ? 'N/A' : 'low')).toLowerCase();
+      const badgeClass = isPass ? 'sev-pass' : `sev-${sev}`;
+      const checkName = f.check_name || f.issue_id || 'Check';
+      const desc = f.description || '';
+      const rec = f.recommendation || '';
+
+      return `
+      <div class="seo-issue">
+        <div class="seo-issue-sev"><div class="badge ${badgeClass}">${status}</div></div>
+        <div class="seo-issue-desc">
+          <p><strong>${checkName}:</strong> ${desc || '<em>No description available.</em>'}</p>
+          ${rec && !isPass ? `<div class="seo-issue-rec">💡 ${rec}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    html += `
+      <div class="seo-phase">
+        <div class="seo-phase-hdr">
+          ${p.title}
+          <span style="font-size:0.75rem; font-weight:400; margin-left:auto; display:flex; gap:0.5rem;">
+            <span style="color:var(--ac2)">✓ ${passCount} Pass</span>
+            <span style="color:var(--cr)">✗ ${failCount} Fail</span>
+          </span>
+        </div>
+        <div class="seo-phase-body" style="padding:0">${issuesHtml}</div>
+      </div>
+    `;
+  });
+
+
+  if (data.actionable_recommendations && data.actionable_recommendations.length > 0) {
+    html += `
+      <div class="seo-phase">
+        <div class="seo-phase-hdr">Actionable Recommendations</div>
+        <div class="seo-phase-body">
+          <ul>${data.actionable_recommendations.map(r => `<li style="margin-bottom:.5rem">${r}</li>`).join('')}</ul>
+        </div>
+      </div>
+    `;
+  }
+
+  if (data.pages_scanned && data.pages_scanned.length > 0) {
+    let pagesHtml = data.pages_scanned.map(p => {
+      let issues = (p.seo_issues || []).map(i => `<li>${i}</li>`).join('');
+      let statusColor = p.status_code >= 200 && p.status_code < 300 ? 'var(--ac2)' : (p.status_code >= 400 ? 'var(--cr)' : 'var(--hi)');
+      return `
+        <tr class="seo-page-row">
+          <td><div class="tb-url" title="${p.url}">${p.url}</div></td>
+          <td style="color:${statusColor}; font-weight:bold;">${p.status_code}</td>
+          <td><div class="tb-title" title="${p.title}">${p.title || 'N/A'}</div></td>
+          <td><ul style="margin:0; padding-left:1rem; font-size:0.8rem; color:var(--t2)">${issues || '<li>None</li>'}</ul></td>
         </tr>
-      `).join('');
-    }
-  } catch (e) {
-    document.getElementById('dsLoad').classList.add('hidden');
-    toast(e.message, 'err');
-  } finally {
-    document.getElementById('btnDeepScan').disabled = false;
+      `;
+    }).join('');
+
+    html += `
+      <div class="seo-phase" style="margin-top: 1rem;">
+        <div class="seo-phase-hdr">Pages Scanned (${data.pages_scanned.length})</div>
+        <div class="seo-phase-body" style="padding:0; overflow-x:auto;">
+          <table class="seo-pages-table">
+            <thead>
+              <tr>
+                <th style="width:30%">URL</th>
+                <th style="width:10%">Status</th>
+                <th style="width:25%">Title</th>
+                <th style="width:35%">Detected Issues</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagesHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
   }
+
+  out.innerHTML = html;
 }
 
-async function deleteDeepThreat(filepath, idx) {
-  if (!confirm(`WARNING: Are you sure you want to PERMANENTLY delete the following threat from your device?\n\n${filepath}\n\nThis cannot be undone.`)) return;
-  try {
-    const res = await fetch('http://localhost:8000/api/scan/directory/delete', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filepath })
-    });
-    if (!res.ok) throw new Error('Delete failed');
-    toast('Threat file securely deleted from device!', 'ok');
-
-    // Update UI
-    const tr = document.getElementById(`threat-${idx}`);
-    if (tr) {
-      tr.style.opacity = '0.5';
-      const btn = tr.querySelector('button');
-      if (btn) { btn.disabled = true; btn.textContent = 'DELETED'; }
-    }
-  } catch (e) {
-    toast(e.message, 'err');
-  }
+function downloadSeoPdf() {
+  const element = document.getElementById('seoResults');
+  if (!element || element.classList.contains('hidden')) return;
+  const opt = {
+    margin: 0.5,
+    filename: 'QAForge_SEO_Audit.pdf',
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+  };
+  html2pdf().set(opt).from(element).save();
 }
+

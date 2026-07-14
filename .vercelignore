@@ -1,0 +1,16 @@
+.venv
+env
+venv
+ENV
+.git
+.vscode
+.idea
+node_modules
+reports
+.wrangler
+QAForge_Presentation.pptx
+bin
+*.pptx
+*.log
+__pycache__
+*.pyc

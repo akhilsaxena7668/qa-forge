@@ -26,9 +26,10 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;600;700&family=DM+Mono:wght@400;500&display=swap"
     rel="stylesheet" />
   <link rel="stylesheet" href="css/app.css?v=4" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 
-<body data-theme="cyber" data-font="jetbrains">
+<body data-theme="ice" data-font="jetbrains">
   <div class="noise"></div>
 
   <!-- NAV -->
@@ -45,7 +46,8 @@
       <button class="ntab" data-p="generate" onclick="nav('generate')">GENERATE</button>
       <button class="ntab" data-p="bugscan" onclick="nav('bugscan')">BUG SCAN</button>
       <button class="ntab" data-p="bugformat" onclick="nav('bugformat')">BUG REPORT</button>
-      <button class="ntab" data-p="antivirus" onclick="nav('antivirus')">ANTIVIRUS</button>
+      <button class="ntab" data-p="seoaudit" onclick="nav('seoaudit')">SEO AUDIT</button>
+
       <button class="ntab" data-p="apitest" onclick="nav('apitest')">API TEST</button>
       <button class="ntab" data-p="perftest" onclick="nav('perftest')">PERF TEST</button>
       <button class="ntab" data-p="execute" onclick="nav('execute')">EXECUTE</button>
@@ -556,16 +558,19 @@
         </div>
 
         <label class="fl bugfmt-main-label" style="margin-top:.9rem">Enter Bug Details</label>
-        <textarea class="fta bugfmt-textarea" id="bfRawText" rows="12" placeholder="Paste your raw bug statement here…&#10;&#10;Examples:&#10;• colors are not visible on search product page but they are in product detail page&#10;• login page broken when i click sign in nothing happens button freezes&#10;• pdf download not working for invoices in admin panel on safari&#10;• cart total shows wrong amount when applying discount coupon twice&#10;• mobile app crashes on checkout when address field is empty"></textarea>
+        <textarea class="fta bugfmt-textarea" id="bfRawText" rows="12"
+          placeholder="Paste your raw bug statement here…&#10;&#10;Examples:&#10;• colors are not visible on search product page but they are in product detail page&#10;• login page broken when i click sign in nothing happens button freezes&#10;• pdf download not working for invoices in admin panel on safari&#10;• cart total shows wrong amount when applying discount coupon twice&#10;• mobile app crashes on checkout when address field is empty"></textarea>
 
         <div class="bugfmt-btn-row">
           <button class="btn-gen bugfmt-btn" id="bfGenBtn" onclick="runBugFormat()">⚡ Generate Report</button>
-          <button class="btn-ghost bugfmt-regen-btn" id="bfRegenBtn" onclick="runBugFormat()" style="display:none">🔄 Regenerate</button>
+          <button class="btn-ghost bugfmt-regen-btn" id="bfRegenBtn" onclick="runBugFormat()" style="display:none">🔄
+            Regenerate</button>
         </div>
 
         <div class="bugfmt-hint">
           <span class="bugfmt-hint-icon">💡</span>
-          <span>Tip: Just paste your informal notes — AI will fix grammar, infer reproduction steps, and generate Jira/Azure DevOps/Bugzilla-ready output.</span>
+          <span>Tip: Just paste your informal notes — AI will fix grammar, infer reproduction steps, and generate
+            Jira/Azure DevOps/Bugzilla-ready output.</span>
         </div>
       </div>
 
@@ -581,10 +586,15 @@
 
         <!-- Loading -->
         <div id="bfLoad" class="load-st hidden">
-          <div class="load-hex" style="color:var(--ac2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+          <div class="load-hex" style="color:var(--ac2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+            </svg></div>
           <div class="load-title">Generating professional bug report…</div>
           <div class="load-sub" id="bfLoadSub">Analyzing raw text…</div>
-          <div class="load-bar"><div class="load-fill" style="background:var(--ac2)"></div></div>
+          <div class="load-bar">
+            <div class="load-fill" style="background:var(--ac2)"></div>
+          </div>
         </div>
 
         <!-- Empty -->
@@ -778,100 +788,43 @@
     </div>
   </main>
 
-  <!-- ══════════ ANTIVIRUS ══════════ -->
-  <main id="p-antivirus" class="page">
+
+
+  <!-- ══════════ SEO AUDIT ══════════ -->
+  <main id="p-seoaudit" class="page">
     <div class="pg-hdr">
-      <h2>DEEP-DEPTH ANTIVIRUS</h2>
-      <p>Hybrid Offline Signature & AI Heuristic Scanning</p>
+      <h2>🔍 SEO & SECURITY AUDIT</h2>
+      <p>Perform an enterprise-grade deep scan of any website for SEO, Accessibility, Security, and Performance.</p>
     </div>
-    <div class="scan-wrap" style="grid-template-columns: 1fr; max-width: 800px; margin: 2rem auto;">
-      <div class="cfg-card">
-        <div class="cfg-card-title">Upload Suspicious File</div>
-        <div class="cfg-card-desc">Upload a script, binary, or structured payload to scan for malware, backdoors, and
-          logic bombs.</div>
-        <div class="upz" id="avDropZone" onclick="document.getElementById('avFileInput').click()">
-          <div class="uz-i">🛡</div>
-          <div class="uz-t">Click or Drag & Drop File</div>
-          <div class="uz-s" id="avFileName">Max 10MB</div>
-        </div>
-        <input type="file" id="avFileInput" style="display:none" onchange="handleAvSelect(event)">
-        <button class="btn-primary" style="margin-top: 1rem; width: 100%;" onclick="startAvScan()" id="btnAvScan">START
-          HYBRID SCAN</button>
 
-        <!-- AV Results -->
-        <div id="avResults" class="hidden" style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--b);">
-          <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
-            <div class="ss-box" style="flex: 1;">
-              <div class="ss-n" id="avRisk" style="font-size: 2.2rem;">SAFE</div>
-              <div class="ss-l">RISK LEVEL</div>
-            </div>
-            <button id="btnAvDelete" class="btn-scan hidden"
-              style="margin: 0; flex: 1; padding: 1.2rem; font-size: 1rem;" onclick="deleteThreat()">DELETE
-              THREAT</button>
-          </div>
-          <div class="cfg-section-title">OFFLINE SIGNATURES (REGEX)</div>
-          <div id="avOffline" class="bug-filters" style="padding: 0; margin-bottom: 1rem;">None</div>
-          <div class="cfg-section-title">AI HEURISTIC ANALYSIS (GEMINI)</div>
-          <div id="avAiReport"
-            style="font-family: var(--fm); font-size: 0.8rem; color: var(--t2); line-height: 1.6; background: var(--bg3); padding: 1rem; border: 1px solid var(--b);">
-          </div>
-        </div>
+    <div class="seo-audit-container">
+      <div class="seo-input-row" data-html2canvas-ignore="true">
+        <input type="url" id="seoUrlInput" class="fi" placeholder="https://example.com" />
+        <select id="seoDepthSelect" class="fi" style="width: auto;">
+          <option value="standard">Standard Scan</option>
+          <option value="deep">Deep Scan</option>
+          <option value="paranoid">Paranoid Scan</option>
+        </select>
+        <button class="btn-primary" id="seoRunBtn" onclick="runSeoAudit()">RUN SCAN</button>
+        <button class="btn-ghost hidden" id="seoPdfBtn" onclick="downloadSeoPdf()">⬇ DOWNLOAD PDF</button>
+      </div>
 
-        <!-- AV Loading -->
-        <div id="avLoad" class="load-st hidden">
-          <div class="load-hex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-            </svg></div>
-          <div class="load-title">Analyzing File...</div>
-          <div class="load-sub">Running offline YARA limits & Gemini deep-scan</div>
-          <div class="load-bar">
-            <div class="load-fill"></div>
-          </div>
+      <!-- Loading State -->
+      <div id="seoLoad" class="load-st hidden" style="margin-top:2rem" data-html2canvas-ignore="true">
+        <div class="load-hex" style="color:var(--a)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+          </svg></div>
+        <div class="load-title">Auditing Website…</div>
+        <div class="load-sub">Performing deep 19-phase analysis. This may take 20-40 seconds.</div>
+        <div class="load-bar">
+          <div class="load-fill" style="background:var(--a)"></div>
         </div>
       </div>
 
-      <!-- Deep Device Scan -->
-      <div class="cfg-card" style="margin-top: 2rem;">
-        <div class="cfg-card-title">Deep Device Scan</div>
-        <div class="cfg-card-desc">Enter a directory path (e.g. <code>C:\Downloads</code> or <code>D:\</code> for mobile
-          USB) to recursively scan for threats using offline heuristics.</div>
-        <div class="slider-row" style="margin-bottom: 1rem;">
-          <input type="text" class="fi" id="avDirPath" placeholder="C:\Users\Name\Downloads" style="flex: 1;" />
-        </div>
-        <button class="btn-primary" style="width: 100%;" onclick="startDeepScan()" id="btnDeepScan">SCAN
-          DIRECTORY</button>
-
-        <!-- Deep Scan Loading -->
-        <div id="dsLoad" class="load-st hidden">
-          <div class="load-hex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-            </svg></div>
-          <div class="load-title">Scanning Directory...</div>
-          <div class="load-sub">Recursively analyzing files for malicious signatures</div>
-          <div class="load-bar">
-            <div class="load-fill"></div>
-          </div>
-        </div>
-
-        <!-- Deep Scan Results -->
-        <div id="dsResults" class="hidden" style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--b);">
-          <div class="cfg-section-title">THREATS DETECTED: <span id="dsThreatCount">0</span></div>
-          <div style="overflow-x:auto;">
-            <table class="data-table" id="dsTable" style="width:100%; text-align:left; border-collapse: collapse;">
-              <thead>
-                <tr style="border-bottom: 1px solid var(--b); color: var(--t2);">
-                  <th style="padding: 0.5rem;">Risk</th>
-                  <th style="padding: 0.5rem;">File</th>
-                  <th style="padding: 0.5rem;">Signatures</th>
-                  <th style="padding: 0.5rem;">Action</th>
-                </tr>
-              </thead>
-              <tbody id="dsTbody"></tbody>
-            </table>
-          </div>
-        </div>
+      <!-- Output Container -->
+      <div id="seoResults" class="hidden seo-results">
+        <!-- Rendered by JS -->
       </div>
     </div>
   </main>
@@ -926,14 +879,17 @@
         <!-- URL Bar -->
         <div class="api-url-bar">
           <div class="api-method-group">
-            <button class="api-method-btn m-get active" data-method="GET" onclick="setApiMethod(this,'GET')">GET</button>
+            <button class="api-method-btn m-get active" data-method="GET"
+              onclick="setApiMethod(this,'GET')">GET</button>
             <button class="api-method-btn m-post" data-method="POST" onclick="setApiMethod(this,'POST')">POST</button>
             <button class="api-method-btn m-put" data-method="PUT" onclick="setApiMethod(this,'PUT')">PUT</button>
-            <button class="api-method-btn m-patch" data-method="PATCH" onclick="setApiMethod(this,'PATCH')">PATCH</button>
+            <button class="api-method-btn m-patch" data-method="PATCH"
+              onclick="setApiMethod(this,'PATCH')">PATCH</button>
             <button class="api-method-btn m-del" data-method="DELETE" onclick="setApiMethod(this,'DELETE')">DEL</button>
             <button class="api-method-btn m-head" data-method="HEAD" onclick="setApiMethod(this,'HEAD')">HEAD</button>
           </div>
-          <input class="api-url-input" id="apiUrl" type="text" placeholder="https://api.example.com/endpoint  or  {{baseUrl}}/users" />
+          <input class="api-url-input" id="apiUrl" type="text"
+            placeholder="https://api.example.com/endpoint  or  {{baseUrl}}/users" />
           <button class="api-send-btn" onclick="sendApiRequest()">SEND ⚡</button>
         </div>
 
@@ -994,18 +950,22 @@
         <!-- Body Pane -->
         <div class="api-req-pane" id="apiPane-body">
           <div class="api-body-types">
-            <button class="api-body-type active" data-bodytype="json" onclick="setApiBodyType(this,'json')">JSON</button>
+            <button class="api-body-type active" data-bodytype="json"
+              onclick="setApiBodyType(this,'json')">JSON</button>
             <button class="api-body-type" data-bodytype="raw" onclick="setApiBodyType(this,'raw')">Raw</button>
             <button class="api-body-type" data-bodytype="form" onclick="setApiBodyType(this,'form')">Form Data</button>
           </div>
           <div class="api-body-pane active" id="apiBody-json">
-            <textarea class="api-body-editor" id="apiBodyJson" rows="8" placeholder='{\n  "key": "value"\n}' spellcheck="false"></textarea>
+            <textarea class="api-body-editor" id="apiBodyJson" rows="8" placeholder='{\n  "key": "value"\n}'
+              spellcheck="false"></textarea>
           </div>
           <div class="api-body-pane" id="apiBody-raw">
-            <textarea class="api-body-editor" id="apiBodyRaw" rows="8" placeholder="Raw body content..." spellcheck="false"></textarea>
+            <textarea class="api-body-editor" id="apiBodyRaw" rows="8" placeholder="Raw body content..."
+              spellcheck="false"></textarea>
           </div>
           <div class="api-body-pane" id="apiBody-form">
-            <textarea class="api-body-editor" id="apiBodyForm" rows="8" placeholder="key1=value1&amp;key2=value2" spellcheck="false"></textarea>
+            <textarea class="api-body-editor" id="apiBodyForm" rows="8" placeholder="key1=value1&amp;key2=value2"
+              spellcheck="false"></textarea>
           </div>
         </div>
 
@@ -1023,22 +983,29 @@
           </div>
           <div class="api-xsrf-section">
             <div class="api-cookies-title" style="margin-top:1rem">🛡 XSRF / CSRF Protection</div>
-            <div class="api-xsrf-desc">When enabled, the XSRF token cookie is automatically sent as a header on POST/PUT/PATCH/DELETE requests.</div>
+            <div class="api-xsrf-desc">When enabled, the XSRF token cookie is automatically sent as a header on
+              POST/PUT/PATCH/DELETE requests.</div>
             <div id="apiXsrfConfig"></div>
           </div>
         </div>
 
         <!-- Pre-request Pane -->
         <div class="api-req-pane" id="apiPane-prescript">
-          <div class="api-script-hint">JavaScript executed before request. Access <code>pm</code>, <code>headers</code> and <code>body</code>.<br>
+          <div class="api-script-hint">JavaScript executed before request. Access <code>pm</code>, <code>headers</code>
+            and <code>body</code>.<br>
             Use <code>pm.environment.set('key','value')</code>, <code>pm.cookies.set('name','value')</code></div>
-          <textarea class="api-body-editor" id="apiPreScript" rows="6" placeholder="// Example: headers['X-Timestamp'] = Date.now().toString();&#10;// pm.environment.set('token', 'abc123');&#10;// pm.cookies.set('session', 'xyz');" spellcheck="false"></textarea>
+          <textarea class="api-body-editor" id="apiPreScript" rows="6"
+            placeholder="// Example: headers['X-Timestamp'] = Date.now().toString();&#10;// pm.environment.set('token', 'abc123');&#10;// pm.cookies.set('session', 'xyz');"
+            spellcheck="false"></textarea>
         </div>
 
         <!-- Tests Pane -->
         <div class="api-req-pane" id="apiPane-tests">
-          <div class="api-script-hint">Post-request test scripts. Use <code>pm.test()</code>, <code>pm.expect()</code>, <code>pm.environment.set/get()</code>, <code>pm.cookies.get/set()</code>.</div>
-          <textarea class="api-body-editor" id="apiTestScript" rows="6" placeholder='pm.test("Status is 200", () => {\n  pm.expect(pm.response.status).to.equal(200);\n});' spellcheck="false"></textarea>
+          <div class="api-script-hint">Post-request test scripts. Use <code>pm.test()</code>, <code>pm.expect()</code>,
+            <code>pm.environment.set/get()</code>, <code>pm.cookies.get/set()</code>.</div>
+          <textarea class="api-body-editor" id="apiTestScript" rows="6"
+            placeholder='pm.test("Status is 200", () => {\n  pm.expect(pm.response.status).to.equal(200);\n});'
+            spellcheck="false"></textarea>
           <div id="apiTestResults" class="api-test-results hidden"></div>
         </div>
 
@@ -1050,7 +1017,9 @@
               <span id="apiResStatus"></span>
               <span class="api-res-meta" id="apiResTime"></span>
               <span class="api-res-meta" id="apiResSize"></span>
-              <button class="bsm bsm-a" id="apiGenBtn" style="margin-left: .8rem; font-size: 0.65rem; height: 1.4rem; padding: 0 0.6rem; display: none;" onclick="generateTestsFromApi()">✦ GENERATE TESTS</button>
+              <button class="bsm bsm-a" id="apiGenBtn"
+                style="margin-left: .8rem; font-size: 0.65rem; height: 1.4rem; padding: 0 0.6rem; display: none;"
+                onclick="generateTestsFromApi()">✦ GENERATE TESTS</button>
             </div>
             <div class="api-res-tabs">
               <button class="api-res-tab active" onclick="switchApiResTab(this,'body')">Body</button>
@@ -1060,9 +1029,14 @@
 
           <!-- Loading -->
           <div id="apiResLoading" class="load-st hidden">
-            <div class="load-hex" style="color:var(--ac)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+            <div class="load-hex" style="color:var(--ac)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+              </svg></div>
             <div class="load-title">Sending request…</div>
-            <div class="load-bar"><div class="load-fill"></div></div>
+            <div class="load-bar">
+              <div class="load-fill"></div>
+            </div>
           </div>
 
           <!-- Empty -->
@@ -1099,10 +1073,14 @@
         <div class="panel-block">
           <div class="block-title">TEST PROFILE</div>
           <div class="perf-prof-row">
-            <button class="perf-prof active" data-prof="smoke" onclick="setPerfProfile(this)">🔥 Smoke<span>2u · 10req</span></button>
-            <button class="perf-prof" data-prof="load" onclick="setPerfProfile(this)">📊 Load<span>10u · 50req</span></button>
-            <button class="perf-prof" data-prof="stress" onclick="setPerfProfile(this)">💪 Stress<span>50u · 200req</span></button>
-            <button class="perf-prof" data-prof="spike" onclick="setPerfProfile(this)">⚡ Spike<span>100u · 500req</span></button>
+            <button class="perf-prof active" data-prof="smoke" onclick="setPerfProfile(this)">🔥 Smoke<span>2u ·
+                10req</span></button>
+            <button class="perf-prof" data-prof="load" onclick="setPerfProfile(this)">📊 Load<span>10u ·
+                50req</span></button>
+            <button class="perf-prof" data-prof="stress" onclick="setPerfProfile(this)">💪 Stress<span>50u ·
+                200req</span></button>
+            <button class="perf-prof" data-prof="spike" onclick="setPerfProfile(this)">⚡ Spike<span>100u ·
+                500req</span></button>
             <button class="perf-prof" data-prof="custom" onclick="setPerfProfile(this)">⚙ Custom</button>
           </div>
         </div>
@@ -1117,7 +1095,8 @@
             <button class="perf-method-btn" data-method="PATCH" onclick="setPerfMethod(this)">PATCH</button>
             <button class="perf-method-btn" data-method="DELETE" onclick="setPerfMethod(this)">DEL</button>
           </div>
-          <input class="fi" id="perfUrl" type="text" placeholder="https://api.example.com/endpoint" style="margin-top:.5rem" />
+          <input class="fi" id="perfUrl" type="text" placeholder="https://api.example.com/endpoint"
+            style="margin-top:.5rem" />
         </div>
 
         <!-- Sliders -->
@@ -1126,29 +1105,37 @@
           <div class="perf-slider-group">
             <label class="perf-sl-label">Concurrent Users</label>
             <div class="perf-sl-row">
-              <input type="range" class="slider" id="perfUsers" min="1" max="100" value="2" oninput="syncPerfSlider('perfUsers','perfUsersNum')" />
-              <input type="number" class="num-in" id="perfUsersNum" min="1" max="100" value="2" oninput="syncPerfNum('perfUsersNum','perfUsers')" />
+              <input type="range" class="slider" id="perfUsers" min="1" max="100" value="2"
+                oninput="syncPerfSlider('perfUsers','perfUsersNum')" />
+              <input type="number" class="num-in" id="perfUsersNum" min="1" max="100" value="2"
+                oninput="syncPerfNum('perfUsersNum','perfUsers')" />
             </div>
           </div>
           <div class="perf-slider-group">
             <label class="perf-sl-label">Total Requests</label>
             <div class="perf-sl-row">
-              <input type="range" class="slider" id="perfReqs" min="1" max="1000" value="10" oninput="syncPerfSlider('perfReqs','perfReqsNum')" />
-              <input type="number" class="num-in" id="perfReqsNum" min="1" max="1000" value="10" oninput="syncPerfNum('perfReqsNum','perfReqs')" />
+              <input type="range" class="slider" id="perfReqs" min="1" max="1000" value="10"
+                oninput="syncPerfSlider('perfReqs','perfReqsNum')" />
+              <input type="number" class="num-in" id="perfReqsNum" min="1" max="1000" value="10"
+                oninput="syncPerfNum('perfReqsNum','perfReqs')" />
             </div>
           </div>
           <div class="perf-slider-group">
             <label class="perf-sl-label">Ramp-up (seconds)</label>
             <div class="perf-sl-row">
-              <input type="range" class="slider" id="perfRamp" min="0" max="30" value="0" oninput="syncPerfSlider('perfRamp','perfRampNum')" />
-              <input type="number" class="num-in" id="perfRampNum" min="0" max="30" value="0" oninput="syncPerfNum('perfRampNum','perfRamp')" />
+              <input type="range" class="slider" id="perfRamp" min="0" max="30" value="0"
+                oninput="syncPerfSlider('perfRamp','perfRampNum')" />
+              <input type="number" class="num-in" id="perfRampNum" min="0" max="30" value="0"
+                oninput="syncPerfNum('perfRampNum','perfRamp')" />
             </div>
           </div>
           <div class="perf-slider-group">
             <label class="perf-sl-label">Timeout (seconds)</label>
             <div class="perf-sl-row">
-              <input type="range" class="slider" id="perfTimeout" min="1" max="60" value="10" oninput="syncPerfSlider('perfTimeout','perfTimeoutNum')" />
-              <input type="number" class="num-in" id="perfTimeoutNum" min="1" max="60" value="10" oninput="syncPerfNum('perfTimeoutNum','perfTimeout')" />
+              <input type="range" class="slider" id="perfTimeout" min="1" max="60" value="10"
+                oninput="syncPerfSlider('perfTimeout','perfTimeoutNum')" />
+              <input type="number" class="num-in" id="perfTimeoutNum" min="1" max="60" value="10"
+                oninput="syncPerfNum('perfTimeoutNum','perfTimeout')" />
             </div>
           </div>
         </div>
@@ -1156,7 +1143,9 @@
         <!-- Headers & Body -->
         <div class="panel-block">
           <div class="block-title">HEADERS <span class="title-badge">OPTIONAL</span></div>
-          <textarea class="fta" id="perfHeaders" rows="3" placeholder="Content-Type: application/json&#10;Authorization: Bearer token123" spellcheck="false"></textarea>
+          <textarea class="fta" id="perfHeaders" rows="3"
+            placeholder="Content-Type: application/json&#10;Authorization: Bearer token123"
+            spellcheck="false"></textarea>
         </div>
         <div class="panel-block" id="perfBodySection" style="display:none">
           <div class="block-title">REQUEST BODY</div>
@@ -1166,7 +1155,8 @@
         <!-- Run -->
         <div class="panel-block">
           <button class="btn-perf" id="perfRunBtn" onclick="runPerfTest()">▶ RUN PERFORMANCE TEST</button>
-          <button class="btn-perf btn-perf-abort" id="perfAbortBtn" style="display:none" onclick="abortPerfTest()">⬛ ABORT TEST</button>
+          <button class="btn-perf btn-perf-abort" id="perfAbortBtn" style="display:none" onclick="abortPerfTest()">⬛
+            ABORT TEST</button>
         </div>
 
         <!-- History -->
@@ -1201,16 +1191,46 @@
 
           <!-- Stats Grid -->
           <div class="perf-stats-grid">
-            <div class="perf-stat-card"><div class="perf-stat-n" id="perfStatTotal">—</div><div class="perf-stat-l">Total Requests</div></div>
-            <div class="perf-stat-card ps-success"><div class="perf-stat-n" id="perfStatSuccess">—</div><div class="perf-stat-l">Successful</div></div>
-            <div class="perf-stat-card ps-fail"><div class="perf-stat-n" id="perfStatFailed">—</div><div class="perf-stat-l">Failed</div></div>
-            <div class="perf-stat-card ps-avg"><div class="perf-stat-n" id="perfStatAvg">—</div><div class="perf-stat-l">Avg Latency</div></div>
-            <div class="perf-stat-card ps-p95"><div class="perf-stat-n" id="perfStatP95">—</div><div class="perf-stat-l">P95 Latency</div></div>
-            <div class="perf-stat-card ps-p99"><div class="perf-stat-n" id="perfStatP99">—</div><div class="perf-stat-l">P99 Latency</div></div>
-            <div class="perf-stat-card"><div class="perf-stat-n" id="perfStatMin">—</div><div class="perf-stat-l">Min Latency</div></div>
-            <div class="perf-stat-card"><div class="perf-stat-n" id="perfStatMax">—</div><div class="perf-stat-l">Max Latency</div></div>
-            <div class="perf-stat-card ps-rps"><div class="perf-stat-n" id="perfStatRps">—</div><div class="perf-stat-l">Req / Sec</div></div>
-            <div class="perf-stat-card ps-err"><div class="perf-stat-n" id="perfStatErr">—</div><div class="perf-stat-l">Error Rate</div></div>
+            <div class="perf-stat-card">
+              <div class="perf-stat-n" id="perfStatTotal">—</div>
+              <div class="perf-stat-l">Total Requests</div>
+            </div>
+            <div class="perf-stat-card ps-success">
+              <div class="perf-stat-n" id="perfStatSuccess">—</div>
+              <div class="perf-stat-l">Successful</div>
+            </div>
+            <div class="perf-stat-card ps-fail">
+              <div class="perf-stat-n" id="perfStatFailed">—</div>
+              <div class="perf-stat-l">Failed</div>
+            </div>
+            <div class="perf-stat-card ps-avg">
+              <div class="perf-stat-n" id="perfStatAvg">—</div>
+              <div class="perf-stat-l">Avg Latency</div>
+            </div>
+            <div class="perf-stat-card ps-p95">
+              <div class="perf-stat-n" id="perfStatP95">—</div>
+              <div class="perf-stat-l">P95 Latency</div>
+            </div>
+            <div class="perf-stat-card ps-p99">
+              <div class="perf-stat-n" id="perfStatP99">—</div>
+              <div class="perf-stat-l">P99 Latency</div>
+            </div>
+            <div class="perf-stat-card">
+              <div class="perf-stat-n" id="perfStatMin">—</div>
+              <div class="perf-stat-l">Min Latency</div>
+            </div>
+            <div class="perf-stat-card">
+              <div class="perf-stat-n" id="perfStatMax">—</div>
+              <div class="perf-stat-l">Max Latency</div>
+            </div>
+            <div class="perf-stat-card ps-rps">
+              <div class="perf-stat-n" id="perfStatRps">—</div>
+              <div class="perf-stat-l">Req / Sec</div>
+            </div>
+            <div class="perf-stat-card ps-err">
+              <div class="perf-stat-n" id="perfStatErr">—</div>
+              <div class="perf-stat-l">Error Rate</div>
+            </div>
           </div>
 
           <!-- Charts -->
@@ -1256,7 +1276,7 @@
           </button>
           <button class="csb-item" data-tab="models" onclick="switchCfgTab(this,'models')">
             <span class="csb-icon">🤖</span><span>Models</span>
-          </button>          <button class="csb-item" data-tab="formats" onclick="switchCfgTab(this,'formats')">
+          </button> <button class="csb-item" data-tab="formats" onclick="switchCfgTab(this,'formats')">
             <span class="csb-icon">📋</span><span>Test Formats</span>
           </button>
           <button class="csb-item" data-tab="automation" onclick="switchCfgTab(this,'automation')">
@@ -1276,7 +1296,7 @@
           <div class="cfg-card">
             <div class="cfg-card-title">Color Theme</div>
             <div class="theme-grid">
-              <button class="theme-card active" data-theme="cyber" onclick="setTheme(this,'cyber')">
+              <button class="theme-card" data-theme="cyber" onclick="setTheme(this,'cyber')">
                 <div class="tc-preview tc-cyber"></div>
                 <span class="tc-name">Cyber Dark</span>
                 <span class="tc-desc">Teal on near-black</span>
@@ -1296,7 +1316,7 @@
                 <span class="tc-name">Amber Terminal</span>
                 <span class="tc-desc">Warm amber on black</span>
               </button>
-              <button class="theme-card" data-theme="ice" onclick="setTheme(this,'ice')">
+              <button class="theme-card active" data-theme="ice" onclick="setTheme(this,'ice')">
                 <div class="tc-preview tc-ice"></div>
                 <span class="tc-name">Ice</span>
                 <span class="tc-desc">Blue on light grey</span>

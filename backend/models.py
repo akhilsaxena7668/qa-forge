@@ -124,3 +124,8 @@ class BugFormatRequest(BaseModel):
     severity: Optional[str] = None          # pre-set severity hint
     environment: Optional[str] = None       # e.g. staging, production
     module: Optional[str] = None            # ui, api, cart, checkout, mobile, admin, etc.
+
+class SeoAuditRequest(BaseModel):
+    url: str
+    depth: Optional[str] = "standard"
+
