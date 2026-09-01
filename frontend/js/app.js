@@ -472,7 +472,7 @@ function stab(tab, btn) {
 
 // ═══════ FILE DRAG ═══════
 function setupDrag() {
-  ['imgZone', 'vidZone'].forEach(id => {
+  ['imgZone', 'vidZone', 'docZone'].forEach(id => {
     const z = document.getElementById(id); if (!z) return;
     z.addEventListener('dragover', e => { e.preventDefault(); z.style.borderColor = 'var(--ac)'; }, { passive: false });
     z.addEventListener('dragleave', () => z.style.borderColor = '');
@@ -592,6 +592,47 @@ async function genText() {
     showSuite(s); loadStats();
   } catch (e) { toast(e.message, 'err'); hideLoading(); showEmpty(); }
 }
+
+// ═══════ DOC UPLOAD PREVIEW ═══════
+function prevDoc(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const ext = f.name.split('.').pop().toUpperCase();
+  const icons = { PDF: '📕', DOC: '📘', DOCX: '📘', PPT: '📙', PPTX: '📙', TXT: '📃', MD: '📃', CSV: '📊' };
+  const icon = icons[ext] || '📄';
+  const size = f.size < 1024 * 1024 ? `${(f.size/1024).toFixed(1)} KB` : `${(f.size/1024/1024).toFixed(1)} MB`;
+  document.getElementById('docPrev').innerHTML =
+    `<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem;background:var(--bg3);border:1px solid var(--b);margin-top:.4rem;font-family:var(--fm);">
+       <span style="font-size:1.4rem">${icon}</span>
+       <div><div style="font-size:.75rem;color:var(--t1);font-weight:600">${f.name}</div>
+       <div style="font-size:.6rem;color:var(--t3)">${ext} · ${size}</div></div>
+     </div>`;
+  document.getElementById('docZone').style.display = 'none';
+}
+
+async function genDoc() {
+  if (!validateFocus()) return;
+  const f = document.getElementById('docFile').files[0];
+  if (!f) return toast('Upload a requirements document', 'err');
+  const rc = getRangeConfig();
+  showLoading(`Parsing document — focus: ${getFocusAreas().join(', ')}`, `Range: ${rc.min_tests}–${rc.max_tests} tests`);
+  try {
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('app_type', v('gDocType'));
+    fd.append('description', v('gDocDesc'));
+    fd.append('focus_areas', getFocusAreas().join(','));
+    fd.append('min_tests', rc.min_tests);
+    fd.append('max_tests', rc.max_tests);
+    if (genMode === 'swarm') {
+      fd.append('is_multi_agent', 'true');
+      fd.append('agents', getFocusAreas().join(','));
+    }
+    fd.append('depth', curDepth);
+    const s = await postForm('/api/generate/document', fd);
+    showSuite(s); loadStats();
+  } catch (e) { toast(e.message, 'err'); hideLoading(); showEmpty(); }
+}
+
 
 // ═══════ SUITE DISPLAY ═══════
 function showSuite(suite) {

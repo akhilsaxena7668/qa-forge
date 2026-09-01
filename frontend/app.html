@@ -274,6 +274,7 @@
           <button class="itab" onclick="stab('image',this)">📸 IMAGE</button>
           <button class="itab" onclick="stab('video',this)">🎬 VIDEO</button>
           <button class="itab" onclick="stab('text',this)">📝 TEXT</button>
+          <button class="itab" onclick="stab('doc',this)">📄 DOC</button>
         </div>
         <div class="ibody active" id="t-url">
           <label class="fl">Application URL</label>
@@ -335,6 +336,28 @@
             <option value="api">API/Backend</option>
           </select>
           <button class="btn-gen" style="background:var(--ac2)" onclick="genText()">✦ GENERATE FROM TEXT</button>
+        </div>
+        <div class="ibody" id="t-doc">
+          <div class="upz" id="docZone" onclick="document.getElementById('docFile').click()"
+            style="border-color:rgba(99,179,237,.4)">
+            <div class="uz-i">📄</div>
+            <div class="uz-t">Click or drag requirements document</div>
+            <div class="uz-s">PDF · DOC · DOCX · PPT · PPTX · TXT · MD</div>
+            <input type="file" id="docFile"
+              accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown,text/csv"
+              hidden onchange="prevDoc(event)" />
+          </div>
+          <div id="docPrev" class="prev-box"></div>
+          <label class="fl">App Type</label>
+          <select class="fs" id="gDocType">
+            <option value="web">Web</option>
+            <option value="mobile">Mobile</option>
+            <option value="desktop">Desktop</option>
+            <option value="api">API/Backend</option>
+          </select>
+          <label class="fl">Additional Context (optional)</label>
+          <textarea class="fta" id="gDocDesc" rows="2" placeholder="Any extra context about the app or requirements…"></textarea>
+          <button class="btn-gen" style="background:linear-gradient(135deg,#3b82f6,#6366f1)" onclick="genDoc()">📄 GENERATE FROM DOC</button>
         </div>
       </div>
 

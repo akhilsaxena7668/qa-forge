@@ -552,6 +552,135 @@ class AIEngine:
             
         return await self._generate_batched(req, "video", None, image_data=vid, extra_context=extra)
 
+    # ── DOCUMENT ──────────────────────────────────────────────────────────────
+    @staticmethod
+    def _extract_document_text(file_bytes: bytes, filename: str, mime_type: str) -> str:
+        """Extract plain text from PDF, DOCX, PPTX, or plain text files."""
+        fname = filename.lower()
+        text = ""
+
+        # PDF — via PyMuPDF
+        if fname.endswith(".pdf") or "pdf" in mime_type:
+            try:
+                import pymupdf  # PyMuPDF
+                with pymupdf.open(stream=file_bytes, filetype="pdf") as doc:
+                    pages = [page.get_text() for page in doc]
+                    text = "\n\n".join(pages)
+            except ImportError:
+                raise ValueError("PyMuPDF is not installed. Run: pip install PyMuPDF")
+
+        # DOCX — via python-docx
+        elif fname.endswith(".docx") or "wordprocessingml" in mime_type:
+            try:
+                import io
+                from docx import Document
+                doc = Document(io.BytesIO(file_bytes))
+                paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+                # Also pull from tables
+                for table in doc.tables:
+                    for row in table.rows:
+                        row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                        if row_text:
+                            paragraphs.append(row_text)
+                text = "\n".join(paragraphs)
+            except ImportError:
+                raise ValueError("python-docx is not installed. Run: pip install python-docx")
+
+        # DOC — legacy Word (basic fallback: read as text)
+        elif fname.endswith(".doc"):
+            # Try to extract readable text; .doc is binary so basic UTF-8 decode with errors ignored
+            text = file_bytes.decode("latin-1", errors="ignore")
+            # Strip obvious binary noise
+            import re as _re
+            text = _re.sub(r'[^\x09\x0a\x0d\x20-\x7e\xa0-\xff]', ' ', text)
+            text = _re.sub(r' {4,}', ' ', text).strip()
+
+        # PPTX — via python-pptx
+        elif fname.endswith(".pptx") or "presentationml" in mime_type:
+            try:
+                import io
+                from pptx import Presentation
+                prs = Presentation(io.BytesIO(file_bytes))
+                slides_text = []
+                for i, slide in enumerate(prs.slides, 1):
+                    slide_parts = [f"[Slide {i}]"]
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text") and shape.text.strip():
+                            slide_parts.append(shape.text.strip())
+                    slides_text.append("\n".join(slide_parts))
+                text = "\n\n".join(slides_text)
+            except ImportError:
+                raise ValueError("python-pptx is not installed. Run: pip install python-pptx")
+
+        # PPT — legacy PowerPoint (basic fallback)
+        elif fname.endswith(".ppt"):
+            text = file_bytes.decode("latin-1", errors="ignore")
+            import re as _re
+            text = _re.sub(r'[^\x09\x0a\x0d\x20-\x7e\xa0-\xff]', ' ', text)
+            text = _re.sub(r' {4,}', ' ', text).strip()
+
+        # Plain text / markdown / CSV / other
+        else:
+            for enc in ("utf-8", "latin-1"):
+                try:
+                    text = file_bytes.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+
+        return text.strip()
+
+    async def generate_from_document(self, file_bytes: bytes, filename: str,
+                                     mime_type: str, app_type: str,
+                                     description: str, focus_areas: List[str],
+                                     rc: Optional[RangeConfig] = None,
+                                     is_multi_agent: bool = False,
+                                     agents: List[str] = None,
+                                     model: str = None,
+                                     depth: str = "standard") -> TestSuite:
+        """Parse a requirements document and generate test cases from its content."""
+        doc_text = self._extract_document_text(file_bytes, filename, mime_type)
+        if not doc_text or len(doc_text) < 20:
+            raise ValueError("Could not extract meaningful text from the document.")
+
+        # Truncate to avoid token overflow (keep ~60k chars ≈ ~15k tokens)
+        if len(doc_text) > 60_000:
+            doc_text = doc_text[:60_000] + "\n\n[... document truncated for length ...]"
+
+        extra = f"""
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIREMENTS DOCUMENT: {filename}
+App Type: {app_type}
+Additional Context: {description or "None provided"}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{doc_text}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Read the above requirements document carefully. Extract every feature, user story,
+business rule, acceptance criterion, and functional requirement. Then generate
+comprehensive test cases that verify each requirement is correctly implemented.
+Generate tests ONLY for the selected focus areas above.
+"""
+
+        req = GenerateRequest(
+            app_type=app_type,
+            description=f"Requirements from document: {filename}",
+            focus_areas=focus_areas,
+            range_config=rc,
+            is_multi_agent=is_multi_agent,
+            agents=agents,
+            model=model,
+            depth=depth,
+        )
+
+        if is_multi_agent and agents:
+            return await self._generate_swarm(req, f"document:{filename}", None, extra_context=extra)
+
+        return await self._generate_batched(req, f"document:{filename}", None, extra_context=extra)
+
     # ── API INTERACTION ───────────────────────────────────────────────────────
     async def generate_from_api(self, req: ApiGenerateRequest) -> TestSuite:
         req_headers = json.dumps(req.request_headers, indent=2)

@@ -160,11 +160,48 @@ async def gen_video(
     store["suites"][suite.id] = suite.dict()
     return suite
 
+@app.post("/api/generate/document")
+async def gen_document(
+    file: UploadFile = File(...),
+    app_type: str = Form("web"),
+    description: str = Form(""),
+    focus_areas: str = Form(""),
+    min_tests: int = Form(10),
+    max_tests: int = Form(20),
+    is_multi_agent: bool = Form(False),
+    agents: str = Form(""),
+    depth: str = Form("standard"),
+):
+    """Generate test cases from a requirements document (PDF, DOC/DOCX, PPT/PPTX, TXT, MD, CSV)."""
+    data = await file.read()
+    rc   = RangeConfig(min_tests=min_tests, max_tests=max_tests)
+    fa_list = [f.strip() for f in focus_areas.split(",") if f.strip()]
+    agent_list = [a.strip() for a in agents.split(",") if a.strip()]
+    try:
+        suite = await ai.generate_from_document(
+            file_bytes=data,
+            filename=file.filename or "document",
+            mime_type=file.content_type or "application/octet-stream",
+            app_type=app_type,
+            description=description,
+            focus_areas=fa_list,
+            rc=rc,
+            is_multi_agent=is_multi_agent,
+            agents=agent_list,
+            depth=depth,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    store["suites"][suite.id] = suite.dict()
+    return suite
+
+
 @app.post("/api/generate/api")
 async def gen_api(req: ApiGenerateRequest):
     suite = await ai.generate_from_api(req)
     store["suites"][suite.id] = suite.dict()
     return suite
+
 
 # ── Bug Scan ───────────────────────────────────────────────────────────────────
 @app.post("/api/scan/bugs")
