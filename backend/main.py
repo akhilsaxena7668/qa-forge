@@ -480,9 +480,28 @@ async def list_perf_results():
     return list(store.get("perf_results", {}).values())
 
 # ── Frontend ───────────────────────────────────────────────────────────────────
-_fe = Path(__file__).parent.parent / "frontend"
+def _find_frontend() -> Path:
+    # 1) Explicit env var (set by Windows launcher / Docker)
+    env_dir = os.environ.get("QAFORGE_FRONTEND_DIR", "")
+    if env_dir and Path(env_dir).exists():
+        return Path(env_dir)
+    # 2) Standard local layout: backend/../frontend
+    candidate = Path(__file__).parent.parent / "frontend"
+    if candidate.exists():
+        return candidate
+    # 3) Vercel serverless: walk up from __file__ to find repo root
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        fe = parent / "frontend"
+        if fe.exists():
+            return fe
+    return candidate   # fall back even if missing; StaticFiles will just not mount
+
+_fe = _find_frontend()
+print(f"[QAForge] Frontend directory: {_fe} (exists={_fe.exists()})")
 if _fe.exists():
     app.mount("/", StaticFiles(directory=str(_fe), html=True), name="frontend")
+
 
 @app.on_event("startup")
 def startup_event():
