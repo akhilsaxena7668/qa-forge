@@ -3,6 +3,7 @@
 import os, json, uuid, base64
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -230,6 +231,35 @@ async def dl_scan(sid: str):
 async def format_bug(req: BugFormatRequest):
     result = await ai.format_bug(req.raw_text, req.app_type, req.severity, req.environment, req.module)
     return result
+
+@app.post("/api/format/bug/image")
+async def format_bug_image(
+    raw_text:    str = Form(""),
+    app_type:    str = Form("web"),
+    severity:    str = Form(""),
+    environment: str = Form(""),
+    module:      str = Form("ui"),
+    image:       Optional[UploadFile] = File(None),
+):
+    """Generate a professional bug report from an optional screenshot + optional text description."""
+    image_b64  = None
+    image_mime = None
+    if image and image.filename:
+        img_data   = await image.read()
+        image_b64  = base64.b64encode(img_data).decode()
+        image_mime = image.content_type or "image/png"
+
+    result = await ai.format_bug(
+        raw_text=raw_text,
+        app_type=app_type,
+        severity=severity or None,
+        environment=environment or None,
+        module=module or None,
+        image_b64=image_b64,
+        image_mime=image_mime,
+    )
+    return result
+
 
 # ── SEO Audit ──────────────────────────────────────────────────────────────────
 @app.post("/api/audit/seo")

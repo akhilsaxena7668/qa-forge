@@ -5814,7 +5814,210 @@ a {
   }
 }
 
+/* ══════════ BUG REPORT — IMAGE INPUT ══════════ */
+
+/* Input mode tab bar */
+.bfin-tabs {
+  display: flex;
+  gap: .35rem;
+  margin-top: .4rem;
+  margin-bottom: .5rem;
+  flex-wrap: wrap;
+}
+
+.bfin-tab {
+  font-family: var(--fm);
+  font-size: .72rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border: 1.5px solid var(--b2);
+  border-radius: 20px;
+  background: var(--s);
+  color: var(--t3);
+  cursor: pointer;
+  transition: all .25s ease;
+  user-select: none;
+  letter-spacing: .02em;
+}
+
+.bfin-tab:hover {
+  border-color: var(--ac2);
+  color: var(--ac2);
+  background: rgba(16, 185, 129, .06);
+}
+
+.bfin-tab.active {
+  border-color: var(--ac2);
+  background: var(--ac2);
+  color: #000;
+  box-shadow: 0 0 10px rgba(16, 185, 129, .25);
+}
+
+/* Panel visibility */
+.bfin-panel {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.bfin-panel.hidden { display: none !important; }
+
+/* Drop zone (shared by paste & upload) */
+.bfin-drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 155px;
+  border: 2px dashed var(--b2);
+  border-radius: var(--radius-sm);
+  background: var(--s);
+  cursor: pointer;
+  transition: all .25s ease;
+  outline: none;
+  padding: 1.2rem;
+}
+
+.bfin-drop-zone:hover,
+.bfin-drop-zone:focus {
+  border-color: var(--ac2);
+  background: rgba(16, 185, 129, .04);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, .1);
+}
+
+.bfin-drop-zone.drag-over {
+  border-color: var(--ac2);
+  background: rgba(16, 185, 129, .1);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, .18);
+  transform: scale(1.01);
+}
+
+.bfin-drop-icon {
+  font-size: 2rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, .3));
+}
+
+.bfin-drop-title {
+  font-family: var(--fd);
+  font-size: .92rem;
+  font-weight: 700;
+  color: var(--t);
+  letter-spacing: -.01em;
+}
+
+.bfin-drop-hint {
+  font-family: var(--fm);
+  font-size: .68rem;
+  color: var(--t3);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.bfin-drop-hint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--bg2);
+  font-family: var(--fm);
+  font-size: .65rem;
+  color: var(--t2);
+  box-shadow: 0 1px 2px rgba(0,0,0,.12);
+}
+
+/* Upload zone overrides */
+.bfin-upload-zone {
+  min-height: 140px;
+}
+
+.bfin-upload-label {
+  display: block;
+  cursor: pointer;
+}
+
+/* Image preview panel */
+.bfin-preview {
+  border: 1.5px solid var(--ac2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--s);
+  animation: bf-preview-in .3s ease;
+}
+
+@keyframes bf-preview-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.bfin-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .5rem .8rem;
+  background: rgba(16, 185, 129, .08);
+  border-bottom: 1px solid rgba(16, 185, 129, .2);
+}
+
+.bfin-preview-label {
+  font-family: var(--fm);
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--ac2);
+  letter-spacing: .04em;
+}
+
+.bfin-remove-btn {
+  font-family: var(--fm);
+  font-size: .65rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border: 1px solid var(--cr);
+  border-radius: 4px;
+  background: rgba(239, 68, 68, .08);
+  color: var(--cr);
+  cursor: pointer;
+  transition: all .2s;
+  letter-spacing: .03em;
+}
+
+.bfin-remove-btn:hover {
+  background: var(--cr);
+  color: #fff;
+}
+
+.bfin-preview-img {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  background: #000;
+}
+
+/* Supplementary description */
+.bfin-extra {
+  margin-top: .2rem;
+}
+
+.bfin-extra.hidden { display: none !important; }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .bfin-tab {
+    font-size: .65rem;
+    padding: 5px 10px;
+  }
+  .bfin-drop-zone {
+    min-height: 110px;
+  }
+  .bfin-preview-img {
+    max-height: 180px;
+  }
+}
+
 /* ══════════ SEO AUDIT ══════════ */
+
 .seo-audit-container { display: flex; flex-direction: column; gap: 1.5rem; }
 .seo-input-row { display: flex; gap: .5rem; }
 .seo-results { display: flex; flex-direction: column; gap: 2rem; background: var(--bg); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--b); }

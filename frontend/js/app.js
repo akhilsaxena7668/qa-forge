@@ -1269,6 +1269,8 @@ function dlScan() {
 
 // ═══════ BUG REPORT GENERATOR ═══════
 let lastBugReport = null;
+let bfImageFile   = null;   // holds the current File/Blob to be submitted
+let bfActiveTab   = 'paste'; // paste | upload | text
 
 function toggleBfMod(el) {
   document.querySelectorAll('.bfmod').forEach(m => m.classList.remove('active'));
@@ -1279,10 +1281,142 @@ function getSelectedModule() {
   return active ? active.dataset.v : 'ui';
 }
 
+// ── Tab switching ────────────────────────────────────────────────────────────
+function switchBfTab(btn, tab) {
+  bfActiveTab = tab;
+  document.querySelectorAll('.bfin-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.bfin-panel').forEach(p => {
+    p.classList.toggle('active', p.id === `bfin-${tab}`);
+    p.classList.toggle('hidden', p.id !== `bfin-${tab}`);
+  });
+
+  // Move the shared image preview into the active panel
+  const preview = document.getElementById('bfImagePreview');
+  if (tab === 'paste') {
+    document.getElementById('bfin-paste').appendChild(preview);
+  } else if (tab === 'upload') {
+    document.getElementById('bfin-upload').appendChild(preview);
+  }
+
+  // Show supplementary text field only when an image is attached and we're on paste/upload
+  _syncExtraDesc();
+}
+
+function _syncExtraDesc() {
+  const extra = document.getElementById('bfExtraDesc');
+  if (bfImageFile && bfActiveTab !== 'text') {
+    extra.classList.remove('hidden');
+  } else {
+    extra.classList.add('hidden');
+  }
+}
+
+// ── Image preview helper ─────────────────────────────────────────────────────
+function _showBfImagePreview(file) {
+  bfImageFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('bfPreviewImg').src = e.target.result;
+    document.getElementById('bfImagePreview').classList.remove('hidden');
+    // Collapse the drop-zone visual cue
+    const zone = document.getElementById('bfin-paste').querySelector('.bfin-drop-zone');
+    if (zone) zone.style.display = 'none';
+    // For upload tab, hide the drop zone there too
+    const uploadZone = document.getElementById('bfin-upload').querySelector('.bfin-drop-zone');
+    if (uploadZone) uploadZone.style.display = 'none';
+    _syncExtraDesc();
+    toast('📎 Screenshot attached — ready to generate report', 'ok');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeBfImage() {
+  bfImageFile = null;
+  document.getElementById('bfPreviewImg').src = '';
+  document.getElementById('bfImagePreview').classList.add('hidden');
+  // Restore drop zones
+  document.querySelectorAll('.bfin-drop-zone').forEach(z => z.style.display = '');
+  document.getElementById('bfImageInput').value = '';
+  _syncExtraDesc();
+}
+
+// ── Paste handler ────────────────────────────────────────────────────────────
+function handleBfPaste(e) {
+  const items = (e.clipboardData || e.originalEvent && e.originalEvent.clipboardData).items;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      _showBfImagePreview(item.getAsFile());
+      return;
+    }
+  }
+  toast('No image found in clipboard — try Ctrl+C on a screenshot first', 'err');
+}
+
+// ── Drag-and-drop handler ────────────────────────────────────────────────────
+function handleBfDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    _showBfImagePreview(file);
+    // Switch to the paste panel so the preview is visible
+    if (bfActiveTab !== 'paste' && bfActiveTab !== 'upload') {
+      const pasteBtn = document.querySelector('.bfin-tab[data-tab="paste"]');
+      if (pasteBtn) switchBfTab(pasteBtn, 'paste');
+    }
+  } else {
+    toast('Please drop an image file', 'err');
+  }
+}
+
+// ── File input handler ───────────────────────────────────────────────────────
+function handleBfFileInput(input) {
+  const file = input.files[0];
+  if (file && file.type.startsWith('image/')) {
+    _showBfImagePreview(file);
+  } else {
+    toast('Please select an image file', 'err');
+  }
+}
+
+// ── Global paste listener (works anywhere on Bug Report page) ─────────────────
+document.addEventListener('paste', e => {
+  // Only intercept when we are on the bugformat page
+  const page = document.getElementById('p-bugformat');
+  if (!page || !page.classList.contains('active')) return;
+  // Don't steal paste from text inputs
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  const items = (e.clipboardData || {}).items || [];
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      // Switch to paste tab if not already there
+      if (bfActiveTab !== 'paste') {
+        const btn = document.querySelector('.bfin-tab[data-tab="paste"]');
+        if (btn) switchBfTab(btn, 'paste');
+      }
+      _showBfImagePreview(item.getAsFile());
+      return;
+    }
+  }
+});
+
+// ── Main generate function ───────────────────────────────────────────────────
 async function runBugFormat() {
-  const raw = v('bfRawText').trim();
-  if (!raw) return toast('Enter bug details first', 'err');
-  if (raw.length < 10) return toast('Please provide more detail (min 10 chars)', 'err');
+  // Determine what inputs are available
+  const raw = (document.getElementById('bfRawText').value || '').trim();
+  const extraText = (document.getElementById('bfExtraText').value || '').trim();
+  const hasImage = !!bfImageFile;
+  const hasText  = raw.length >= 5 || extraText.length >= 5;
+
+  if (!hasImage && !hasText) {
+    return toast('Please paste/upload a screenshot OR enter a bug description', 'err');
+  }
+  if (!hasImage && raw.length < 10) {
+    return toast('Please provide more detail (min 10 chars) or attach a screenshot', 'err');
+  }
 
   // Show loading
   document.getElementById('bfLoad').classList.remove('hidden');
@@ -1290,7 +1424,15 @@ async function runBugFormat() {
   document.getElementById('bfOutput').classList.add('hidden');
   document.getElementById('bfActs').style.display = 'none';
 
-  const msgs = [
+  const msgs = hasImage ? [
+    'Analysing screenshot…',
+    'Extracting visible bug evidence…',
+    'Identifying error messages & UI issues…',
+    'Inferring reproduction steps from image…',
+    'Determining severity & priority…',
+    'Structuring for Jira / Azure DevOps…',
+    'Generating professional bug report…'
+  ] : [
     'Analyzing raw bug statement…',
     'Fixing grammar & spelling…',
     'Converting to professional QA language…',
@@ -1299,6 +1441,7 @@ async function runBugFormat() {
     'Structuring for Jira / Azure DevOps…',
     'Generating professional bug report…'
   ];
+
   let i = 0;
   const iv = setInterval(() => {
     if (document.getElementById('bfLoad').classList.contains('hidden')) return clearInterval(iv);
@@ -1306,15 +1449,37 @@ async function runBugFormat() {
   }, 1100);
 
   try {
-    const body = {
-      raw_text: raw,
-      app_type: v('bfAppType'),
-      module: getSelectedModule(),
-    };
-    const env = v('bfEnv').trim();
-    if (env) body.environment = env;
+    let res;
 
-    const res = await post('/api/format/bug', body);
+    if (hasImage) {
+      // ── Image (+ optional text) path ──
+      const combined = [raw, extraText].filter(Boolean).join('\n\n');
+      const fd = new FormData();
+      fd.append('raw_text',    combined);
+      fd.append('app_type',    document.getElementById('bfAppType').value);
+      fd.append('module',      getSelectedModule());
+      const env = document.getElementById('bfEnv').value.trim();
+      if (env) fd.append('environment', env);
+      fd.append('image', bfImageFile, bfImageFile.name || 'screenshot.png');
+
+      const r = await fetch('/api/format/bug/image', { method: 'POST', body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || 'Server error');
+      }
+      res = await r.json();
+    } else {
+      // ── Text-only path (original behaviour unchanged) ──
+      const body = {
+        raw_text: raw,
+        app_type: document.getElementById('bfAppType').value,
+        module:   getSelectedModule(),
+      };
+      const env = document.getElementById('bfEnv').value.trim();
+      if (env) body.environment = env;
+      res = await post('/api/format/bug', body);
+    }
+
     lastBugReport = res;
     clearInterval(iv);
     document.getElementById('bfLoad').classList.add('hidden');
@@ -1329,6 +1494,7 @@ async function runBugFormat() {
     toast(e.message, 'err');
   }
 }
+
 
 function showBugReport(r) {
   document.getElementById('bfOutput').classList.remove('hidden');

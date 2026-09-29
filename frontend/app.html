@@ -580,9 +580,67 @@
           </div>
         </div>
 
-        <label class="fl bugfmt-main-label" style="margin-top:.9rem">Enter Bug Details</label>
-        <textarea class="fta bugfmt-textarea" id="bfRawText" rows="12"
-          placeholder="Paste your raw bug statement here…&#10;&#10;Examples:&#10;• colors are not visible on search product page but they are in product detail page&#10;• login page broken when i click sign in nothing happens button freezes&#10;• pdf download not working for invoices in admin panel on safari&#10;• cart total shows wrong amount when applying discount coupon twice&#10;• mobile app crashes on checkout when address field is empty"></textarea>
+        <label class="fl bugfmt-main-label" style="margin-top:.9rem">Bug Input</label>
+
+        <!-- Input Mode Tabs -->
+        <div class="bfin-tabs" id="bfInputTabs">
+          <button class="bfin-tab active" data-tab="paste" onclick="switchBfTab(this,'paste')">📋 Paste Screenshot</button>
+          <button class="bfin-tab" data-tab="upload" onclick="switchBfTab(this,'upload')">📁 Upload Image</button>
+          <button class="bfin-tab" data-tab="text" onclick="switchBfTab(this,'text')">✍️ Enter Description</button>
+        </div>
+
+        <!-- PASTE ZONE -->
+        <div class="bfin-panel active" id="bfin-paste">
+          <div class="bfin-drop-zone" id="bfPasteZone"
+               tabindex="0"
+               onpaste="handleBfPaste(event)"
+               ondragover="event.preventDefault();this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="handleBfDrop(event)">
+            <div class="bfin-drop-icon">📸</div>
+            <div class="bfin-drop-title">Paste Screenshot Here</div>
+            <div class="bfin-drop-hint">Press <kbd>Ctrl+V</kbd> / <kbd>Cmd+V</kbd> after clicking here, or drag &amp; drop an image</div>
+          </div>
+          <!-- Image preview (shared by paste &amp; upload) -->
+          <div class="bfin-preview hidden" id="bfImagePreview">
+            <div class="bfin-preview-header">
+              <span class="bfin-preview-label">📎 Screenshot Attached</span>
+              <button class="bfin-remove-btn" onclick="removeBfImage()" title="Remove image">✕ Remove</button>
+            </div>
+            <img id="bfPreviewImg" src="" alt="Bug screenshot preview" class="bfin-preview-img" />
+          </div>
+        </div>
+
+        <!-- UPLOAD ZONE -->
+        <div class="bfin-panel hidden" id="bfin-upload">
+          <label class="bfin-upload-label" for="bfImageInput">
+            <div class="bfin-drop-zone bfin-upload-zone"
+                 ondragover="event.preventDefault();this.classList.add('drag-over')"
+                 ondragleave="this.classList.remove('drag-over')"
+                 ondrop="handleBfDrop(event)"
+                 onclick="document.getElementById('bfImageInput').click()">
+              <div class="bfin-drop-icon">📁</div>
+              <div class="bfin-drop-title">Click to Upload or Drag &amp; Drop</div>
+              <div class="bfin-drop-hint">Supports PNG, JPG, JPEG, WebP, GIF</div>
+            </div>
+          </label>
+          <input type="file" id="bfImageInput" accept="image/*" style="display:none" onchange="handleBfFileInput(this)" />
+          <!-- Same preview element is shown here too (JS moves it) -->
+        </div>
+
+        <!-- TEXT ZONE -->
+        <div class="bfin-panel hidden" id="bfin-text">
+          <textarea class="fta bugfmt-textarea" id="bfRawText" rows="10"
+            placeholder="Paste your raw bug statement here…&#10;&#10;Examples:&#10;• colors are not visible on search product page but they are in product detail page&#10;• login page broken when i click sign in nothing happens button freezes&#10;• pdf download not working for invoices in admin panel on safari&#10;• cart total shows wrong amount when applying discount coupon twice&#10;• mobile app crashes on checkout when address field is empty"></textarea>
+        </div>
+
+        <!-- Supplementary description (shown when an image is attached) -->
+        <div class="bfin-extra hidden" id="bfExtraDesc">
+          <label class="fl" style="margin-top:.6rem;font-size:.75rem;">Additional Description (optional)</label>
+          <textarea class="fta" id="bfExtraText" rows="3"
+            placeholder="Add any extra context about the bug not visible in the screenshot… (optional)"></textarea>
+        </div>
+
 
         <div class="bugfmt-btn-row">
           <button class="btn-gen bugfmt-btn" id="bfGenBtn" onclick="runBugFormat()">⚡ Generate Report</button>
@@ -592,8 +650,7 @@
 
         <div class="bugfmt-hint">
           <span class="bugfmt-hint-icon">💡</span>
-          <span>Tip: Just paste your informal notes — AI will fix grammar, infer reproduction steps, and generate
-            Jira/Azure DevOps/Bugzilla-ready output.</span>
+          <span>Tip: Paste a screenshot or upload an image — AI will analyse it and generate a professional bug report. You can also combine an image with a text description for the best results.</span>
         </div>
       </div>
 
@@ -624,7 +681,7 @@
         <div id="bfEmpty" class="empty-st">
           <div class="empty-i">📝</div>
           <div class="empty-t">No report generated yet</div>
-          <div class="empty-s">Enter bug details → click Generate Report</div>
+          <div class="empty-s">Paste/upload a screenshot or enter bug details → click Generate Report</div>
         </div>
 
         <!-- Output -->

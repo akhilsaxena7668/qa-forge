@@ -873,21 +873,57 @@ Structure:
     async def format_bug(self, raw_text: str, app_type: str = "web",
                          severity: Optional[str] = None,
                          environment: Optional[str] = None,
-                         module: Optional[str] = None) -> dict:
-        """Convert raw/informal bug text into a professional bug report."""
+                         module: Optional[str] = None,
+                         image_b64: Optional[str] = None,
+                         image_mime: Optional[str] = None) -> dict:
+        """Convert raw/informal bug text into a professional bug report.
+        Optionally analyse a screenshot/image to extract visible bug evidence.
+        """
         env_hint = f"\nEnvironment context: {environment}" if environment else ""
         sev_hint = f"\nSeverity hint from reporter: {severity}" if severity else ""
         mod_hint = f"\nModule/Area: {module}" if module else ""
 
-        prompt = f"""You are QAForge BugReportGenerator — a senior QA engineer who writes world-class, professional bug reports suitable for Jira, Azure DevOps, Bugzilla, and ClickUp.
+        # Build image-analysis section when a screenshot is provided
+        has_image = bool(image_b64 and image_mime)
+        image_instruction = ""
+        if has_image:
+            image_instruction = """
 
-TASK: Convert the following raw/informal bug statement into a structured, professional bug report.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCREENSHOT / IMAGE ANALYSIS INSTRUCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A screenshot has been provided. You MUST analyse it carefully before writing the report.
 
-RAW BUG STATEMENT:
-\"\"\"
-{raw_text}
-\"\"\"
+Extract ALL visible evidence from the image, including:
+  • Error messages, toast notifications, or alert dialogs
+  • HTTP status codes (e.g. 403, 500, 404) shown anywhere
+  • UI elements that are broken, missing, misaligned, or incorrect
+  • Form validation messages or error labels
+  • Console or API error text visible on screen
+  • Page/component names, URLs, breadcrumbs, or navigation labels
+  • Any data that looks incorrect, duplicated, or missing
+  • Any spinner/loader that should not be present (or is missing)
 
+CRITICAL HONESTY RULES:
+  ✗ DO NOT invent steps, environment details, or technical facts NOT visible in the image
+  ✗ DO NOT fabricate expected results if not inferable from visible UI state
+  ✓ For unknown information use: "[Not determinable from screenshot — please specify]"
+  ✓ Derive the bug title and description PRIMARILY from what is VISUALLY EVIDENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
+        input_section = ""
+        if raw_text and raw_text.strip():
+            input_section = f"""
+ADDITIONAL DESCRIPTION FROM REPORTER:
+\"\"\"{raw_text}\"\"\"
+"""
+        else:
+            input_section = "\n(No additional text description provided — base the report entirely on the screenshot analysis.)\n"
+
+        prompt = f"""You are QAForge BugReportGenerator — a senior QA engineer who writes world-class, professional bug reports suitable for Jira, Azure DevOps, Bugzilla, and ClickUp.{image_instruction}
+
+TASK: Convert the following input into a structured, professional bug report.
+{input_section}
 Application type: {app_type}{mod_hint}{sev_hint}{env_hint}
 
 IMPROVEMENT REQUIREMENTS & CRITICAL INSTRUCTIONS:
@@ -966,10 +1002,24 @@ Quality Rules:
 - Severity guidelines: Critical = system crash/data loss, High = major feature broken, Medium = feature partially works, Low = cosmetic/minor
 - Priority guidelines: P1 = fix immediately, P2 = fix in current sprint, P3 = fix in next sprint, P4 = backlog"""
 
-        text, mname = await asyncio.to_thread(self._try, prompt, None, "flash")
+        # Build image_data for Gemini vision when a screenshot is provided
+        image_data = None
+        if has_image:
+            import google.generativeai as _genai_local
+            image_data = {"mime_type": image_mime, "data": base64.b64decode(image_b64)}
+            # Use the genai Part format that _try expects via content list
+            image_data = _genai_local.protos.Part(
+                inline_data=_genai_local.protos.Blob(
+                    mime_type=image_mime,
+                    data=base64.b64decode(image_b64)
+                )
+            )
+
+        text, mname = await asyncio.to_thread(self._try, prompt, image_data, "flash")
         data = _parse(text)
         data["model_used"] = MODEL_LABELS.get(mname, mname)
         data["formatted_at"] = datetime.now().isoformat()
+        data["has_image"] = has_image
         return data
 
     # ── SEO AUDIT (Hybrid: Python-computed + AI) ──────────────────────────
