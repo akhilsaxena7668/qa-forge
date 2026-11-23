@@ -20,21 +20,30 @@ from .models import GenerateRequest, TestSuite, TestCase, RangeConfig, FormatCon
 from .crawler import crawl_website
 from .seo_extractor import extract_seo_data
 # ── Model chain ───────────────────────────────────────────────────────────────
+
+# MODEL_CHAIN: List[Tuple[str, str]] = [
+#     ("flash",     "gemini-2.5-flash"),
+#     ("pro",       "gemini-2.5-pro"),
+#     ("flash15",   "gemini-2.5-flash-lite"),
+#     ("flash_exp", "gemini-flash-latest"),
+# ]
+# ── Model chain ───────────────────────────────────────────────────────────────
 MODEL_CHAIN: List[Tuple[str, str]] = [
-    ("flash",     "gemini-2.5-flash"),
-    ("pro",       "gemini-2.5-pro"),
-    ("flash15",   "gemini-2.5-flash-lite"),
-    ("flash_exp", "gemini-flash-latest"),
+    ("flash",     "gemini-3.5-flash-lite"),  # Primary: Latest 3.5 generation (1.36s)
+    ("pro",       "gemini-3.1-flash-lite"),  # Fallback 1: Latest 3.1 generation (1.21s)
+    ("flash15",   "gemini-3-flash-preview"), # Fallback 2: Gen 3.0 preview (1.42s)
+    ("flash_exp", "gemini-2.5-flash"),       # Fallback 3: Proven 1M token context anchor
 ]
 
 MODEL_LABELS = {
     "gemini-3.8-flash":       "Gemini 3.8 Flash",
     "gemini-3.5-flash":       "Gemini 3.5 Flash",
-    "gemini-2.5-flash-lite":  "Gemini 2.5 Flash Lite",
-    "gemini-flash-latest":    "Gemini Flash Latest",
     "gemini-3.5-flash-lite":  "Gemini 3.5 Flash Lite",
+    "gemini-3.1-flash-lite":  "Gemini 3.1 Flash Lite",
     "gemini-3-flash-preview": "Gemini 3 Flash Preview",
     "gemini-2.5-flash":       "Gemini 2.5 Flash",
+    "gemini-2.5-flash-lite":  "Gemini 2.5 Flash Lite",
+    "gemini-flash-latest":    "Gemini Flash Latest",
 }
 
 QUOTA_ERRORS = ("quota", "429", "resource exhausted", "rate limit", "too many requests", "exceeded", "billing")
