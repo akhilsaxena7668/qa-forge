@@ -260,15 +260,15 @@
           <span class="blog-tag">${blog.category || 'Article'}</span>
           <h1 class="blog-title">${blog.title}</h1>
           <div class="blog-meta">
-            <div class="author-info">
+            <a href="author.html" class="author-info" style="text-decoration: none; color: inherit; cursor: pointer;" title="View author profile">
               <div class="author-avatar">
                 <img src="assets/akhil.jpg" alt="${blog.author || 'Akhil Saxena'}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(blog.author || 'User')}&background=6366f1&color=fff'">
               </div>
               <div>
-                <strong>${blog.author || 'Akhil Saxena'}</strong>
-                <div style="font-size: 0.75rem">${blog.author_role || 'Software Tester at Navoto'}</div>
+                <strong>${blog.author || 'Akhil Saxena'} <i class="fas fa-external-link-alt" style="font-size: 0.68rem; opacity: 0.7; margin-left: 3px;"></i></strong>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">${blog.author_role || 'Software Tester at Navoto'}</div>
               </div>
-            </div>
+            </a>
             <div style="width: 1px; height: 30px; background: var(--border); margin: 0 0.5rem"></div>
             <div>
               <div>${blog.date || new Date().toLocaleDateString()}</div>

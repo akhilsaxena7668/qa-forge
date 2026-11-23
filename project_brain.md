@@ -35,6 +35,7 @@ QAForge is a comprehensive testing platform designed to streamline quality assur
   - `assets/icon-maskable-192.png` - [New File]
   - `assets/icon-maskable-512.png` - [New File]
   - `assets/icon.svg` - [New File]
+  - `author.html` - [New File]
   - `blog.html` - [New File]
   - `css/app.css` - Main dashboard and component stylesheet
   - `fix_config.py` - [New File]

@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#09090b" />
+  <!-- PWA: Apple / iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="QAForge" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <!-- Favicons -->
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-96.png" />
+  <title>Akhil Saxena | Software Tester at Navoto</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    (function () {
+      const theme = localStorage.getItem('qaf-theme') || 'cyber';
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <style>
+    :root, [data-theme="cyber"] {
+      --primary: #3b82f6;
+      --primary-dark: #2563eb;
+      --primary-light: #60a5fa;
+      --bg: #09090b;
+      --bg-alt: #111116;
+      --card-bg: #18181b;
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --glass: rgba(24, 24, 27, 0.75);
+    }
+
+    [data-theme="synthwave"] {
+      --primary: #d946ef;
+      --primary-dark: #c026d3;
+      --primary-light: #e879f9;
+      --bg: #0f0914;
+      --bg-alt: #170d1f;
+      --card-bg: #1d1128;
+      --border: rgba(217, 70, 239, 0.2);
+      --text: #fdf4ff;
+      --text-muted: #d8b4fe;
+      --glass: rgba(29, 17, 40, 0.75);
+    }
+
+    [data-theme="forest"] {
+      --primary: #10b981;
+      --primary-dark: #059669;
+      --primary-light: #34d399;
+      --bg: #050f09;
+      --bg-alt: #0b1a10;
+      --card-bg: #0f2015;
+      --border: rgba(16, 185, 129, 0.2);
+      --text: #ecfdf5;
+      --text-muted: #a7f3d0;
+      --glass: rgba(15, 32, 21, 0.75);
+    }
+
+    [data-theme="amber"] {
+      --primary: #f59e0b;
+      --primary-dark: #d97706;
+      --primary-light: #fbbf24;
+      --bg: #120c02;
+      --bg-alt: #1a1204;
+      --card-bg: #221606;
+      --border: rgba(245, 158, 11, 0.2);
+      --text: #fffbeb;
+      --text-muted: #fde68a;
+      --glass: rgba(34, 22, 6, 0.75);
+    }
+
+    [data-theme="ice"] {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --primary-light: #38bdf8;
+      --bg: #f8fafc;
+      --bg-alt: #f1f5f9;
+      --card-bg: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --text: #0f172a;
+      --text-muted: #475569;
+      --glass: rgba(255, 255, 255, 0.85);
+    }
+
+    [data-theme="slate"] {
+      --primary: #475569;
+      --primary-dark: #334155;
+      --primary-light: #64748b;
+      --bg: #f8fafc;
+      --bg-alt: #f1f5f9;
+      --card-bg: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --text: #0f172a;
+      --text-muted: #475569;
+      --glass: rgba(255, 255, 255, 0.85);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Navbar */
+    .author-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px);
+      background: var(--glass);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+    }
+
+    .nav-container {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 800;
+      font-size: 1.3rem;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-logo span {
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: color 0.2s ease;
+    }
+
+    .nav-link:hover {
+      color: var(--primary);
+    }
+
+    .btn-launch {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: #fff;
+      padding: 0.5rem 1.2rem;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+      box-shadow: 0 4px 15px rgba(59, 130, 246, 0.25);
+      transition: all 0.2s ease;
+    }
+
+    .btn-launch:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+    }
+
+    /* Main Container */
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem;
+      flex: 1;
+      width: 100%;
+    }
+
+    /* Profile Hero */
+    .profile-hero {
+      display: flex;
+      align-items: center;
+      gap: 3rem;
+      margin-bottom: 2.5rem;
+      background: var(--card-bg);
+      padding: 3rem;
+      border-radius: 1.5rem;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .profile-hero::before {
+      content: '';
+      position: absolute;
+      top: -100px;
+      right: -100px;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, var(--primary) 0%, transparent 70%);
+      opacity: 0.15;
+      pointer-events: none;
+    }
+
+    .profile-img-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .profile-img {
+      width: 200px;
+      height: 200px;
+      border-radius: 1.5rem;
+      object-fit: cover;
+      border: 3px solid var(--primary);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      display: block;
+    }
+
+    .verified-badge {
+      position: absolute;
+      bottom: -8px;
+      right: -8px;
+      background: var(--primary);
+      color: #fff;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 3px solid var(--card-bg);
+      font-size: 0.95rem;
+    }
+
+    .profile-info {
+      flex: 1;
+    }
+
+    .company-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--primary);
+      padding: 0.35rem 0.9rem;
+      border-radius: 100px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      margin-bottom: 0.75rem;
+      border: 1px solid rgba(59, 130, 246, 0.25);
+    }
+
+    .profile-info h1 {
+      font-size: 2.6rem;
+      font-weight: 800;
+      margin-bottom: 0.25rem;
+      color: var(--text);
+      letter-spacing: -0.5px;
+    }
+
+    .profile-info h2 {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-bottom: 1.25rem;
+    }
+
+    .bio {
+      line-height: 1.7;
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .social-links {
+      display: flex;
+      gap: 1.25rem;
+      align-items: center;
+    }
+
+    .social-links a {
+      color: var(--text-muted);
+      font-size: 1.3rem;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      text-decoration: none;
+    }
+
+    .social-links a:hover {
+      color: var(--primary);
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      padding: 1.75rem;
+      border-radius: 1rem;
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+
+    .stat-card h3 {
+      font-size: 2.2rem;
+      color: var(--primary);
+      margin-bottom: 0.35rem;
+      font-weight: 800;
+    }
+
+    .stat-card p {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    /* Skills */
+    .skills-section {
+      background: var(--card-bg);
+      padding: 2rem;
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      margin-bottom: 3rem;
+    }
+
+    .section-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--text);
+    }
+
+    .section-title i {
+      color: var(--primary);
+    }
+
+    .tags-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+
+    .skill-tag {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .skill-tag i {
+      color: var(--primary);
+      font-size: 0.8rem;
+    }
+
+    /* Articles */
+    .articles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .article-card {
+      background: var(--card-bg);
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .article-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary);
+    }
+
+    .article-body {
+      padding: 1.5rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .article-tag {
+      align-self: flex-start;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--primary);
+      background: rgba(59, 130, 246, 0.1);
+      padding: 0.25rem 0.65rem;
+      border-radius: 4px;
+      margin-bottom: 0.85rem;
+    }
+
+    .article-card h4 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 0.65rem;
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    .article-card p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      flex: 1;
+      margin-bottom: 1.2rem;
+    }
+
+    .article-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border);
+      padding-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .article-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .article-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-top: 2rem;
+    }
+
+    @media (max-width: 768px) {
+      .profile-hero {
+        flex-direction: column;
+        text-align: center;
+        padding: 2rem 1.5rem;
+        gap: 2rem;
+      }
+
+      .profile-info h1 {
+        font-size: 2rem;
+      }
+
+      .social-links {
+        justify-content: center;
+      }
+
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Navbar -->
+  <nav class="author-nav">
+    <div class="nav-container">
+      <a href="/" class="brand-logo">
+        <i class="fas fa-layer-group" style="color:var(--primary)"></i>
+        <span>QAFORGE</span>
+      </a>
+      <div class="nav-links">
+        <a href="/" class="nav-link"><i class="fas fa-home"></i> Home</a>
+        <a href="/#blogs" class="nav-link"><i class="fas fa-newspaper"></i> Articles</a>
+        <a href="/app.html" class="btn-launch"><i class="fas fa-play"></i> Launch Suite</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- Hero Profile -->
+    <div class="profile-hero">
+      <div class="profile-img-wrap">
+        <img src="assets/akhil.jpg" alt="Akhil Saxena" class="profile-img" id="profileImg" onerror="this.src='https://ui-avatars.com/api/?name=Akhil+Saxena&background=3b82f6&color=fff&size=200'">
+        <div class="verified-badge" title="Verified Author & Engineer">
+          <i class="fas fa-check"></i>
+        </div>
+      </div>
+      <div class="profile-info">
+        <div class="company-tag"><i class="fas fa-building"></i> Navoto</div>
+        <h1>Akhil Saxena</h1>
+        <h2>Software Tester & QA Architect</h2>
+        <p class="bio">
+          Dedicated Software Tester at Navoto specializing in AI-driven automation, quality assurance strategies, security scanning, and bridging the gap between manual exploratory testing and automated continuous delivery. Creator and architect of QAForge v5.
+        </p>
+        <div class="social-links">
+          <a href="https://github.com/akhilsaxena7668" target="_blank" rel="noopener" title="GitHub"><i class="fab fa-github"></i></a>
+          <a href="https://linkedin.com" target="_blank" rel="noopener" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a>
+          <a href="mailto:akhilsaxena7668@gmail.com" title="Email"><i class="fas fa-envelope"></i></a>
+          <a href="tel:+" title="Phone / Contact"><i class="fas fa-phone"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <h3 id="postCount">3</h3>
+        <p>Featured Articles</p>
+      </div>
+      <div class="stat-card">
+        <h3>5k+</h3>
+        <p>Total Insights Read</p>
+      </div>
+      <div class="stat-card">
+        <h3>100%</h3>
+        <p>Automated QA Focus</p>
+      </div>
+    </div>
+
+    <!-- Core Competencies -->
+    <div class="skills-section">
+      <div class="section-title">
+        <i class="fas fa-tools"></i> Core Engineering & QA Stack
+      </div>
+      <div class="tags-cloud">
+        <span class="skill-tag"><i class="fas fa-microchip"></i> AI-Driven Testing</span>
+        <span class="skill-tag"><i class="fas fa-robot"></i> Playwright & Selenium</span>
+        <span class="skill-tag"><i class="fas fa-shield-alt"></i> Security & Antivirus Audit</span>
+        <span class="skill-tag"><i class="fas fa-search"></i> AEO & GEO Engine Audit</span>
+        <span class="skill-tag"><i class="fas fa-tachometer-alt"></i> Performance & TTFB Benchmarking</span>
+        <span class="skill-tag"><i class="fas fa-code-branch"></i> CI/CD Pipeline Automation</span>
+        <span class="skill-tag"><i class="fab fa-python"></i> Python & FastAPI</span>
+        <span class="skill-tag"><i class="fab fa-js-square"></i> Modern JavaScript & PWA</span>
+      </div>
+    </div>
+
+    <!-- Authored Articles -->
+    <div style="margin-bottom: 2rem;">
+      <div class="section-title">
+        <i class="fas fa-pen-nib"></i> Published Insights by Akhil
+      </div>
+      <div class="articles-grid" id="articlesGrid">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>&copy; 2026 QAForge. Crafted by <strong>Akhil Saxena</strong> &bull; Navoto Software Testing</p>
+  </footer>
+
+  <script>
+    const DEFAULT_BLOGS = [
+      {
+        id: "blog-001",
+        title: "Navigating the Frontier: Best Practices for AI Testing in Modern Software",
+        summary: "Artificial intelligence introduces non-deterministic behavior that traditional testing frameworks struggle to capture. Discover how modern QA teams adapt strategies to validate machine learning models effectively.",
+        category: "AI",
+        read_time: "4 min read",
+        date: "Nov 23, 2026"
+      },
+      {
+        id: "blog-002",
+        title: "Beyond the Basics: Scaling Automation Testing for Enterprise Agility",
+        summary: "Test automation is no longer just a nice-to-have, but the backbone of continuous delivery pipelines. Learn how to design scalable, self-healing test suites that reduce maintenance overhead.",
+        category: "Automation",
+        read_time: "3 min read",
+        date: "Nov 23, 2026"
+      },
+      {
+        id: "blog-003",
+        title: "From Manual to Automated: How AI is Transforming the QA Workflow",
+        summary: "The integration of generative AI and intelligent recorders is revolutionizing how QA professionals transition legacy manual tests into robust automated suites.",
+        category: "Quality Assurance",
+        read_time: "5 min read",
+        date: "Nov 23, 2026"
+      }
+    ];
+
+    async function loadArticles() {
+      const container = document.getElementById('articlesGrid');
+      let blogs = DEFAULT_BLOGS;
+
+      try {
+        // Try session storage first
+        const cached = sessionStorage.getItem('qaforge_blogs');
+        if (cached) {
+          blogs = JSON.parse(cached);
+        } else {
+          const res = await fetch('/api/blogs');
+          if (res.ok) {
+            blogs = await res.json();
+            sessionStorage.setItem('qaforge_blogs', JSON.stringify(blogs));
+          }
+        }
+      } catch (e) {
+        console.warn('Using default articles:', e);
+      }
+
+      document.getElementById('postCount').innerText = blogs.length || '3';
+
+      container.innerHTML = blogs.map(b => `
+        <article class="article-card">
+          <div class="article-body">
+            <span class="article-tag">${b.category || 'QA Insight'}</span>
+            <h4>${b.title}</h4>
+            <p>${b.summary}</p>
+            <div class="article-meta">
+              <span><i class="far fa-clock"></i> ${b.read_time || '4 min'}</span>
+              <a href="blog.html?id=${b.id}" class="article-link">Read Full Post &rarr;</a>
+            </div>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    loadArticles();
+
+    // Theme sync listener
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'qaf-theme') {
+        document.documentElement.setAttribute('data-theme', e.newValue || 'cyber');
+      }
+    });
+  </script>
+
+  <!-- PWA Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          await navigator.serviceWorker.register('sw.js');
+        } catch (err) {
+          console.log('[PWA] SW register skipped:', err);
+        }
+      });
+    }
+  </script>
+</body>
+
+</html>

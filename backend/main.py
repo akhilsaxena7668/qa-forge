@@ -711,6 +711,23 @@ def _find_frontend() -> Path:
 
 _fe = _find_frontend()
 print(f"[QAForge] Frontend directory: {_fe} (exists={_fe.exists()})")
+
+@app.get("/author")
+@app.get("/author.html")
+async def get_author_page():
+    p = _fe / "author.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=404, detail="Author page not found")
+
+@app.get("/blog")
+@app.get("/blog.html")
+async def get_blog_page():
+    p = _fe / "blog.html"
+    if p.exists():
+        return FileResponse(p)
+    raise HTTPException(status_code=404, detail="Blog page not found")
+
 if _fe.exists():
     app.mount("/", StaticFiles(directory=str(_fe), html=True), name="frontend")
 

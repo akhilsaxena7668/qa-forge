@@ -1208,12 +1208,12 @@
             <h3>${b.title}</h3>
             <p>${b.summary}</p>
             <div class="blog-footer">
-              <div class="author-info">
+              <a href="author.html" class="author-link" title="View author profile: ${b.author || 'Akhil Saxena'}">
                 <div class="author-avatar-sm">
                   <img src="assets/akhil.jpg" alt="${b.author || 'Akhil Saxena'}" onerror="this.src='https://ui-avatars.com/api/?name=Akhil+Saxena&background=6366f1&color=fff'">
                 </div>
                 <span>${b.author || 'Akhil Saxena'}</span>
-              </div>
+              </a>
               <a href="blog.html?id=${b.id}" class="btn-read">
                 Explore Insight <i class="fas fa-arrow-right"></i>
               </a>

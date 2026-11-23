@@ -11,7 +11,7 @@
  *  • Push notification readiness
  */
 
-const CACHE_VERSION = 'v15';
+const CACHE_VERSION = 'v16';
 const STATIC_CACHE  = `qaforge-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `qaforge-dynamic-${CACHE_VERSION}`;
 const IMG_CACHE     = `qaforge-images-${CACHE_VERSION}`;
