@@ -8,7 +8,8 @@
     content="AI-Powered Testing Suite. Generate complete test suites and run automation scripts with Gemini AI." />
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#09090b" />
-  <!-- PWA: Apple / iOS -->
+  <!-- PWA: Mobile App Capable -->
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="QAForge" />
@@ -25,8 +26,9 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;600;700&family=DM+Mono:wght@400;500&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="css/app.css?v=4" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <link rel="stylesheet" href="css/app.css?v=9" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 
 <body data-theme="ice" data-font="jetbrains">
@@ -257,14 +259,14 @@
         <div class="panel-block" id="modelBlock">
           <div class="block-title">PREFERRED MODEL</div>
           <div class="model-btns">
-            <button class="msb active" data-m="flash" onclick="pickModel(this,'flash')"><span class="msd c1"></span>2.0
+            <button class="msb active" data-m="flash" onclick="pickModel(this,'flash')"><span class="msd c1"></span>3.8
               Flash</button>
-            <button class="msb" data-m="pro" onclick="pickModel(this,'pro')"><span class="msd c2"></span>1.5
-              Pro</button>
-            <button class="msb" data-m="flash15" onclick="pickModel(this,'flash15')"><span class="msd c3"></span>1.5
+            <button class="msb" data-m="pro" onclick="pickModel(this,'pro')"><span class="msd c2"></span>3.5
               Flash</button>
-            <button class="msb" data-m="flash_exp" onclick="pickModel(this,'flash_exp')"><span class="msd c4"></span>2.0
-              Exp</button>
+            <button class="msb" data-m="flash15" onclick="pickModel(this,'flash15')"><span class="msd c3"></span>2.5
+              Lite</button>
+            <button class="msb" data-m="flash_exp" onclick="pickModel(this,'flash_exp')"><span class="msd c4"></span>Flash
+              Latest</button>
           </div>
         </div>
 
@@ -879,7 +881,7 @@
 
     <div class="seo-audit-container">
       <div class="seo-input-row" data-html2canvas-ignore="true">
-        <input type="url" id="seoUrlInput" class="fi" placeholder="https://example.com" />
+        <input type="url" id="seoUrlInput" class="fi" placeholder="https://example.com" onkeydown="if(event.key==='Enter') runSeoAudit()" />
         <select id="seoDepthSelect" class="fi" style="width: auto;">
           <option value="standard">Standard Scan</option>
           <option value="deep">Deep Scan</option>
@@ -1482,10 +1484,10 @@
             <div id="cfgChain" class="chain-list"></div>
             <div class="cfg-card-title" style="margin-top:1.5rem">Default Model</div>
             <select class="fs" id="cfgModel" style="max-width:300px">
-              <option value="flash">gemini-2.0-flash (recommended)</option>
-              <option value="pro">gemini-1.5-pro (best quality)</option>
-              <option value="flash15">gemini-1.5-flash (fast)</option>
-              <option value="flash_exp">gemini-2.0-flash-exp (experimental)</option>
+              <option value="flash">gemini-3.8-flash (recommended)</option>
+              <option value="pro">gemini-3.5-flash (fast & smart)</option>
+              <option value="flash15">gemini-2.5-flash-lite (ultra-fast)</option>
+              <option value="flash_exp">gemini-flash-latest (auto-updating)</option>
             </select>
           </div>
         </div>
@@ -1694,7 +1696,7 @@ python run.py
 
   <script src="js/perf-tester.js?v=1"></script>
   <script src="js/api-tester.js?v=3"></script>
-  <script src="js/app.js?v=4"></script>
+  <script src="js/app.js?v=13"></script>
   <script>
     const appMenuToggle = document.getElementById('appMenuToggle');
     const ntabs = document.querySelector('.ntabs');

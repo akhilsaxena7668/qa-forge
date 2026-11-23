@@ -724,7 +724,6 @@ function renderTable(tests) {
       case 'browser': return `<td class="col-browser"><span style="font-size:.65rem;color:var(--t3)">${t.browser || '—'}</span></td>`;
       case 'screen': return `<td class="col-screen"><span style="font-size:.65rem;color:var(--t3)">${t.screen || '—'}</span></td>`;
       case 'created_by': return `<td class="col-creator"><span style="font-family:var(--fm);font-size:.55rem;color:var(--t2)">${t.created_by || 'AI Engine'}</span></td>`;
-      case 'tags': return `<td class="col-tags">...</td>`; // Simplified for brevity
       case 'tags': return `<td class="col-tags"><div class="tags-cell">${(t.tags || []).map(g => `<span class="tag-c">${g}</span>`).join('') || '—'}</div></td>`;
       default: return '<td>—</td>';
     }
@@ -784,12 +783,66 @@ function exportCsv() {
   ].map(x => `"${(x || '').toString().replace(/"/g, '""')}"`).join(','));
   const csv = [headers.join(','), ...rows].join('\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `qaforge-suite-${Date.now()}.csv`; a.click();
-  toast('CSV exported with 14 columns', 'ok');
+  toast(`CSV exported with ${headers.length} columns`, 'ok');
 }
 function goExec() { if (curSuiteId) { selExecId = curSuiteId; nav('execute'); } }
 function goAutomate() { if (curSuiteId) { autoSelId = curSuiteId; nav('automate'); } }
 async function dlSuite() { if (curSuiteId) window.location.href = `/api/suites/${curSuiteId}/download`; }
 
+// ═══════ EXECUTE ═══════
+async function loadSuiteList() {
+  try {
+    const suites = await get('/api/suites'), el = document.getElementById('suiteList');
+    if (!suites.length) { el.innerHTML = '<div class="empty-sm">Generate a suite first.</div>'; return; }
+    el.innerHTML = suites.map(s => `<div class="suite-card${s.id === selExecId ? ' sel' : ''}" onclick="selSuite(this,'${s.id}')"><div class="sc-name">${_escapeHtml(s.name)}${s.range_max ? `<span class="sc-range">${s.range_min}–${s.range_max}</span>` : ''}</div><div class="sc-meta">${s.tests?.length || 0} tests · ${_escapeHtml(s.app_type?.toUpperCase() || '')} · ${_escapeHtml(s.model_used || 'Gemini')}</div></div>`).join('');
+    if (selExecId) document.getElementById('execCfg').style.display = 'flex';
+  } catch (err) {
+    console.error('[Execute] Failed to load suites:', err);
+  }
+}
+function selSuite(el, id) { document.querySelectorAll('.suite-card').forEach(c => c.classList.remove('sel')); el.classList.add('sel'); selExecId = id; document.getElementById('execCfg').style.display = 'flex'; }
+async function runSuite() {
+  if (!selExecId) return toast('Select a suite', 'err');
+  document.getElementById('execLive').classList.remove('hidden');
+  document.getElementById('execIdle').style.display = 'none';
+  document.getElementById('liveFeed').innerHTML = '';
+  document.getElementById('runSummary').classList.add('hidden');
+  document.getElementById('runDls').classList.add('hidden');
+  document.getElementById('runFill').style.width = '0%';
+  document.getElementById('runPct').textContent = '0%';
+  try {
+    const r = await post(`/api/execute/${selExecId}`, { environment: v('execEnv'), base_url: v('execUrl') || null });
+    lastRunId = r.run_id; pollRun(r.run_id);
+  } catch (e) { toast(e.message, 'err'); }
+}
+function pollRun(runId) {
+  if (pollTimer) clearInterval(pollTimer); let last = 0;
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await get(`/api/results/${runId}`);
+      document.getElementById('runFill').style.width = r.progress + '%';
+      document.getElementById('runPct').textContent = r.progress + '%';
+      document.getElementById('runInfo').textContent = `Run ${runId.slice(0, 8)} · ${r.environment?.toUpperCase()} · ${r.status.toUpperCase()}`;
+      for (let i = last; i < r.tests.length; i++) {
+        const t = r.tests[i], p = t.status === 'pass', row = document.createElement('div');
+        row.className = `fi-row ${p ? 'pass' : 'fail'}`;
+        row.innerHTML = `<span class="fi-ico">${p ? '✓' : '✗'}</span><span class="fi-name">${_escapeHtml(t.test_id)} — ${_escapeHtml(t.test_name)}</span><span class="fi-dur">${t.duration_ms}ms</span>`;
+        document.getElementById('liveFeed').appendChild(row);
+        row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      last = r.tests.length;
+      if (r.status === 'completed') {
+        clearInterval(pollTimer); const s = r.summary;
+        document.getElementById('runSummary').innerHTML = `<div><div class="rs-num">${s.total}</div><div class="rs-lbl">Total</div></div><div><div class="rs-num c-pass">${s.passed}</div><div class="rs-lbl">Passed</div></div><div><div class="rs-num c-fail">${s.failed}</div><div class="rs-lbl">Failed</div></div><div><div class="rs-num c-rate">${s.pass_rate}%</div><div class="rs-lbl">Pass Rate</div></div>`;
+        document.getElementById('runSummary').classList.remove('hidden');
+        document.getElementById('runDls').classList.remove('hidden');
+        toast(`Done: ${s.passed}/${s.total} passed (${s.pass_rate}%)`, s.pass_rate >= 80 ? 'ok' : 'warn');
+        loadStats(); loadReportList();
+      }
+    } catch { clearInterval(pollTimer); }
+  }, 700);
+}
+async function dlReport(fmt) { if (!lastRunId) return toast('No run yet', 'err'); try { const r = await post(`/api/reports/${lastRunId}?fmt=${fmt}`); window.location.href = `/api/reports/download/${r.filename}`; } catch (e) { toast(e.message, 'err'); } }
 
 // ═══════ AUTOMATE — REAL SCRIPTS ═══════
 function pickFw(btn) {
@@ -1600,24 +1653,104 @@ function downloadBugReport() {
 }
 
 // ══════════ SEO AUDIT ══════════
+// ══════════ SEO AUDIT ══════════
+window.activeSeoScan = null;
+window.lastSeoAuditResult = null;
+
+function initSeoAudit() {
+  const savedActive = window.activeSeoScan || JSON.parse(sessionStorage.getItem('qaforge_active_seo') || 'null');
+  const btn = document.getElementById('seoRunBtn');
+  const load = document.getElementById('seoLoad');
+  const out = document.getElementById('seoResults');
+  const pdfBtn = document.getElementById('seoPdfBtn');
+
+  if (savedActive && window.activeSeoScan) {
+    // Audit is currently in progress
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ SCANNING…'; }
+    if (load) load.classList.remove('hidden');
+    if (out) out.classList.add('hidden');
+    if (pdfBtn) pdfBtn.classList.add('hidden');
+    const input = document.getElementById('seoUrlInput');
+    if (input && savedActive.url && !input.value) input.value = savedActive.url;
+  } else if (window.lastSeoAuditResult) {
+    if (out && (!out.innerHTML.trim() || out.classList.contains('hidden'))) {
+      renderSeoResults(window.lastSeoAuditResult);
+      out.classList.remove('hidden');
+      if (pdfBtn) pdfBtn.classList.remove('hidden');
+      if (load) load.classList.add('hidden');
+    }
+  } else {
+    const cached = sessionStorage.getItem('qaforge_last_seo_res');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        window.lastSeoAuditResult = parsed;
+        if (out && (!out.innerHTML.trim() || out.classList.contains('hidden'))) {
+          renderSeoResults(parsed);
+          out.classList.remove('hidden');
+          if (pdfBtn) pdfBtn.classList.remove('hidden');
+          if (load) load.classList.add('hidden');
+        }
+      } catch (_) {}
+    }
+  }
+}
+
 async function runSeoAudit() {
   const url = document.getElementById('seoUrlInput').value.trim();
   const depth = document.getElementById('seoDepthSelect').value;
   if (!url) return alert('Please enter a website URL');
 
   const btn = document.getElementById('seoRunBtn');
-  const load = document.getElementById('seoLoad');;
+  const load = document.getElementById('seoLoad');
   const out = document.getElementById('seoResults');
   const pdfBtn = document.getElementById('seoPdfBtn');
+  const seoTab = document.querySelector('[data-p="seoaudit"]');
+
+  // Immediately remove any dangling overlay left by html2pdf
+  document.querySelectorAll('.html2pdf__overlay').forEach(el => el.remove());
+
+  window.activeSeoScan = { url, depth, startTime: Date.now() };
+  try { sessionStorage.setItem('qaforge_active_seo', JSON.stringify(window.activeSeoScan)); } catch (_) {}
 
   btn.disabled = true;
+  const origBtnText = 'RUN SCAN';
+  btn.innerHTML = '⏳ SCANNING…';
   load.classList.remove('hidden');
   out.classList.add('hidden');
   pdfBtn.classList.add('hidden');
+  if (seoTab) seoTab.setAttribute('data-scanning', 'true');
 
   try {
-    const res = await post('/api/audit/seo', { url, depth });
+    let res = null;
+    try {
+      res = await post('/api/audit/seo', { url, depth });
+    } catch (fetchErr) {
+      console.warn('[SEO] Direct connection interrupted, polling server background scan...', fetchErr);
+      // If browser tab throttling or network interrupted the HTTP connection,
+      // poll the server status because the server scan task continues running in background
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise(r => setTimeout(r, 2500));
+        try {
+          const st = await fetch(`/api/audit/seo/status?url=${encodeURIComponent(url)}&depth=${depth}`).then(r => r.json());
+          if (st && st.status === 'completed' && st.result) {
+            res = st.result;
+            break;
+          } else if (st && st.status === 'failed') {
+            throw new Error(st.error || 'Scan failed on server');
+          }
+        } catch (pollErr) {
+          if (attempt > 35) throw pollErr;
+        }
+      }
+      if (!res) throw fetchErr;
+    }
+
     if (!res || typeof res !== 'object') throw new Error('Server returned empty response');
+
+    window.lastSeoAuditResult = res;
+    try { sessionStorage.setItem('qaforge_last_seo_res', JSON.stringify(res)); } catch (_) {}
+
     try {
       renderSeoResults(res);
     } catch (renderErr) {
@@ -1626,25 +1759,459 @@ async function runSeoAudit() {
     }
     out.classList.remove('hidden');
     pdfBtn.classList.remove('hidden');
+
+    // If user is currently on another tab/task, notify them nicely
+    const curActive = document.querySelector('.page.active');
+    if (curActive && curActive.id !== 'p-seoaudit') {
+      toast(`✓ SEO Audit for ${url} completed!`, 'ok');
+    }
   } catch (e) {
-    console.error('[SEO] Request error:', e);
-    alert('SEO Audit failed: ' + (e.message || 'Unknown error. Check the browser console.'));
+    console.error('[SEO] Scan error:', e);
+    out.innerHTML = `
+      <div class="empty-st" style="padding:2.5rem; text-align:center;">
+        <div style="font-size:1.3rem; margin-bottom:0.5rem; color:var(--cr);">⚠ Scan Interrupted</div>
+        <p style="color:var(--t2); margin-bottom:1.2rem;">${_escapeHtml(e.message || 'The scan was disrupted.')}</p>
+        <button class="btn-primary" onclick="runSeoAudit()">Retry Scan</button>
+      </div>`;
+    out.classList.remove('hidden');
+    toast('SEO Audit error: ' + (e.message || 'Scan disrupted'), 'err');
   } finally {
+    window.activeSeoScan = null;
+    try { sessionStorage.removeItem('qaforge_active_seo'); } catch (_) {}
+    if (seoTab) seoTab.removeAttribute('data-scanning');
     btn.disabled = false;
+    btn.innerHTML = origBtnText;
     load.classList.add('hidden');
+    document.querySelectorAll('.html2pdf__overlay').forEach(el => el.remove());
   }
+}
+
+// Check server status when returning to the tab from background
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && window.activeSeoScan) {
+    const scan = window.activeSeoScan;
+    fetch(`/api/audit/seo/status?url=${encodeURIComponent(scan.url)}&depth=${scan.depth}`)
+      .then(r => r.json())
+      .then(st => {
+        if (st && st.status === 'completed' && st.result) {
+          window.activeSeoScan = null;
+          try { sessionStorage.removeItem('qaforge_active_seo'); } catch (_) {}
+          window.lastSeoAuditResult = st.result;
+          try { sessionStorage.setItem('qaforge_last_seo_res', JSON.stringify(st.result)); } catch (_) {}
+          renderSeoResults(st.result);
+          const out = document.getElementById('seoResults');
+          const load = document.getElementById('seoLoad');
+          const btn = document.getElementById('seoRunBtn');
+          const pdfBtn = document.getElementById('seoPdfBtn');
+          const seoTab = document.querySelector('[data-p="seoaudit"]');
+          if (out) out.classList.remove('hidden');
+          if (load) load.classList.add('hidden');
+          if (pdfBtn) pdfBtn.classList.remove('hidden');
+          if (btn) { btn.disabled = false; btn.innerHTML = 'RUN SCAN'; }
+          if (seoTab) seoTab.removeAttribute('data-scanning');
+          toast(`✓ SEO Audit for ${scan.url} ready!`, 'ok');
+        }
+      })
+      .catch(() => {});
+  }
+});
+
+function _seoVal(val, fallback) {
+  if (val === null || val === undefined) return `<em class="seo-missing">Missing</em>`;
+  if (val === '') return `<em class="seo-empty">Empty (present but empty)</em>`;
+  return `<span class="seo-val-text">${String(val).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
+}
+function _seoIssueList(issues) {
+  if (!issues || !issues.length) return `<span class="seo-ok">✓ No issues</span>`;
+  return issues.map(i => {
+    const prefix = i.split(':')[0];
+    const cls = prefix.includes('MISSING') ? 'seo-issue-missing' :
+                prefix.includes('MULTIPLE') ? 'seo-issue-mult' :
+                prefix.includes('EMPTY') ? 'seo-issue-empty' :
+                prefix.includes('TOO_') ? 'seo-issue-length' : 'seo-issue-warn';
+    return `<span class="seo-issue-tag ${cls}">${i.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
+  }).join('');
+}
+
+function _escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const seoTableState = {
+  seoImagesTableBody: { filter: 'all', query: '' },
+  seoLinksTableBody: { filter: 'all', query: '' }
+};
+
+window.applySeoTableFilters = function(targetTbodyId) {
+  const tbody = document.getElementById(targetTbodyId);
+  if (!tbody) return;
+  const state = seoTableState[targetTbodyId] || { filter: 'all', query: '' };
+  const rows = tbody.querySelectorAll('.seo-data-row');
+  let visibleCount = 0;
+  const q = (state.query || '').toLowerCase().trim();
+
+  rows.forEach(r => {
+    let matchFilter = true;
+    if (state.filter && state.filter !== 'all') {
+      const filters = (r.getAttribute('data-filter') || '').split(' ');
+      matchFilter = filters.includes(state.filter);
+    }
+
+    let matchQuery = true;
+    if (q) {
+      const aHref = r.querySelector('a')?.getAttribute('href') || '';
+      const aTitle = r.querySelector('a')?.getAttribute('title') || '';
+      const imgSrc = r.querySelector('img')?.getAttribute('src') || '';
+      const fullSearchable = (r.textContent + ' ' + aHref + ' ' + aTitle + ' ' + imgSrc).toLowerCase();
+      matchQuery = fullSearchable.includes(q);
+    }
+
+    const show = matchFilter && matchQuery;
+    r.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
+  });
+
+  const countElId = targetTbodyId === 'seoImagesTableBody' ? 'seoImagesCount' : 'seoLinksCount';
+  const countEl = document.getElementById(countElId);
+  if (countEl) {
+    countEl.textContent = `Showing ${visibleCount} of ${rows.length}`;
+  }
+};
+
+window.filterSeoTable = function(targetTbodyId, filterKey, btnEl) {
+  if (!seoTableState[targetTbodyId]) seoTableState[targetTbodyId] = { filter: 'all', query: '' };
+  seoTableState[targetTbodyId].filter = filterKey || 'all';
+
+  if (btnEl && btnEl.parentElement) {
+    btnEl.parentElement.querySelectorAll('.seo-filter-btn').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+  }
+  applySeoTableFilters(targetTbodyId);
+};
+
+window.searchSeoTable = function(targetTbodyId, query) {
+  if (!seoTableState[targetTbodyId]) seoTableState[targetTbodyId] = { filter: 'all', query: '' };
+  seoTableState[targetTbodyId].query = query || '';
+  applySeoTableFilters(targetTbodyId);
+};
+
+let seoFindingsFilterState = { filter: 'all', query: '' };
+
+window.filterSeoFindings = function(filterType, btnEl) {
+  if (filterType !== undefined) {
+    seoFindingsFilterState.filter = filterType;
+    if (btnEl && btnEl.parentElement) {
+      btnEl.parentElement.querySelectorAll('.seo-filter-btn').forEach(b => b.classList.remove('active'));
+      btnEl.classList.add('active');
+    }
+  }
+
+  const searchInput = document.getElementById('seoFindingsSearch');
+  const q = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  seoFindingsFilterState.query = q;
+
+  const currentFilter = seoFindingsFilterState.filter;
+  const phases = document.querySelectorAll('.seo-phase-findings');
+  let totalIssues = 0;
+  let visibleIssues = 0;
+
+  phases.forEach(phase => {
+    const issues = phase.querySelectorAll('.seo-issue');
+    let phaseVisibleCount = 0;
+
+    issues.forEach(issue => {
+      totalIssues++;
+      const statusBadge = issue.querySelector('.badge');
+      const statusText = statusBadge ? statusBadge.textContent.toUpperCase().trim() : '';
+      const isPass = statusText === 'PASS';
+      const isFail = statusText === 'FAIL';
+      const sevClass = statusBadge ? statusBadge.className : '';
+      const isCriticalOrHigh = sevClass.includes('sev-critical') || sevClass.includes('sev-high');
+
+      let matchFilter = true;
+      if (currentFilter === 'fail') matchFilter = isFail || !isPass;
+      else if (currentFilter === 'pass') matchFilter = isPass;
+      else if (currentFilter === 'critical') matchFilter = isCriticalOrHigh;
+
+      let matchQuery = true;
+      if (q) {
+        matchQuery = issue.textContent.toLowerCase().includes(q);
+      }
+
+      const show = matchFilter && matchQuery;
+      issue.style.display = show ? '' : 'none';
+      if (show) {
+        visibleIssues++;
+        phaseVisibleCount++;
+      }
+    });
+
+    phase.style.display = phaseVisibleCount > 0 ? '' : 'none';
+  });
+
+  const countEl = document.getElementById('seoFindingsCount');
+  if (countEl) {
+    countEl.textContent = `Showing ${visibleIssues} of ${totalIssues} checks`;
+  }
+};
+
+window.toggleSeoSection = function(sectionId, headerEl) {
+  const el = document.getElementById(sectionId);
+  if (!el) return;
+  const isHidden = el.classList.contains('hidden');
+  if (isHidden) {
+    el.classList.remove('hidden');
+    if (headerEl) headerEl.classList.add('open');
+  } else {
+    el.classList.add('hidden');
+    if (headerEl) headerEl.classList.remove('open');
+  }
+};
+
+window.openSeoInspector = function(cardId, bodyId) {
+  const card = document.getElementById(cardId);
+  const body = document.getElementById(bodyId);
+  if (body && body.classList.contains('hidden')) {
+    body.classList.remove('hidden');
+    const hdr = card ? card.querySelector('.seo-inspector-hdr') : null;
+    if (hdr) hdr.classList.add('open');
+  }
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+
+function _renderImagesTable(images) {
+  if (!images || !images.length) {
+    return `<div class="empty-st" style="padding:1.5rem;text-align:center;">No images detected on this page.</div>`;
+  }
+  const rows = images.map((img, idx) => {
+    const src = img.abs_src || img.src || '';
+    const isMissingAlt = !img.alt_present;
+    const isEmptyAlt = img.alt_present && img.alt === "";
+    const isMissingTitle = !img.title_present;
+    const isEmptyTitle = img.title_present && img.title === "";
+
+    let altDisplay = '';
+    if (isMissingAlt) {
+      altDisplay = '<span class="seo-issue-tag seo-issue-missing">MISSING ALT</span>';
+    } else if (isEmptyAlt) {
+      altDisplay = '<span class="seo-issue-tag seo-issue-empty">EMPTY (alt="")</span>';
+    } else {
+      altDisplay = `<span class="seo-val-text font-mono" style="font-size:0.75rem;">${_escapeHtml(img.alt)}</span>`;
+    }
+
+    let titleDisplay = '';
+    if (isMissingTitle) {
+      titleDisplay = '<span class="seo-issue-tag seo-issue-missing">MISSING TITLE</span>';
+    } else if (isEmptyTitle) {
+      titleDisplay = '<span class="seo-issue-tag seo-issue-empty">EMPTY (title="")</span>';
+    } else {
+      titleDisplay = `<span class="seo-val-text font-mono" style="font-size:0.75rem;">${_escapeHtml(img.title)}</span>`;
+    }
+
+    const dims = (img.width && img.height) 
+      ? `<span class="font-mono">${img.width}×${img.height}</span>` 
+      : '<span class="seo-issue-tag seo-issue-warn">Unset</span>';
+
+    const filterFlags = [];
+    if (isMissingAlt) filterFlags.push('missing-alt');
+    if (isEmptyAlt) filterFlags.push('empty-alt');
+    if (isMissingTitle) filterFlags.push('missing-title');
+    if (img.issues && img.issues.length) filterFlags.push('issues');
+    if (!isMissingAlt && !isMissingTitle && !isEmptyAlt) filterFlags.push('valid');
+
+    return `
+      <tr class="seo-data-row" data-filter="${filterFlags.join(' ')}">
+        <td style="width:30px;font-family:var(--font-mono);color:var(--t3);text-align:center;">${idx + 1}</td>
+        <td style="width:50px;">
+          <div class="seo-img-thumb-wrap">
+            <img src="${_escapeHtml(src)}" class="seo-img-thumb" loading="lazy" onerror="this.style.display='none';this.parentElement.innerHTML='<span style=\\'font-size:0.65rem;color:var(--t3)\\'>[N/A]</span>'" alt="${_escapeHtml(img.alt||'')}">
+          </div>
+        </td>
+        <td style="max-width:240px;word-break:break-all;">
+          <a href="${_escapeHtml(src)}" target="_blank" rel="noopener" class="tb-url" title="${_escapeHtml(src)}">${_escapeHtml(src.length > 55 ? src.substring(0, 52) + '...' : src)}</a>
+        </td>
+        <td>${altDisplay}</td>
+        <td>${titleDisplay}</td>
+        <td style="white-space:nowrap;font-size:0.75rem;">${dims}</td>
+        <td>${_seoIssueList(img.issues)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="seo-table-scroll">
+      <table class="seo-inspector-table">
+        <thead>
+          <tr>
+            <th style="width:30px;text-align:center;">#</th>
+            <th style="width:50px;">Preview</th>
+            <th>Source URL (src)</th>
+            <th>ALT Attribute</th>
+            <th>TITLE Attribute</th>
+            <th>Dimensions</th>
+            <th>Issues Detected</th>
+          </tr>
+        </thead>
+        <tbody id="seoImagesTableBody">
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function _renderLinksTable(links) {
+  if (!links || !links.length) {
+    return `<div class="empty-st" style="padding:1.5rem;text-align:center;">No links evaluated on this page.</div>`;
+  }
+  const rows = links.map((l, idx) => {
+    const href = l.abs_href || l.href || '';
+    const isMissingTitle = !l.title_present;
+    const isEmptyTitle = l.title_present && l.title === "";
+
+    let titleDisplay = '';
+    if (isMissingTitle) {
+      titleDisplay = '<span class="seo-issue-tag seo-issue-missing">MISSING TITLE</span>';
+    } else if (isEmptyTitle) {
+      titleDisplay = '<span class="seo-issue-tag seo-issue-empty">EMPTY (title="")</span>';
+    } else {
+      titleDisplay = `<span class="seo-val-text font-mono" style="font-size:0.75rem;">${_escapeHtml(l.title)}</span>`;
+    }
+
+    let anchorDisplay = '';
+    if (!l.anchor_text && !l.has_img) {
+      anchorDisplay = '<span class="seo-issue-tag seo-issue-missing">EMPTY ANCHOR</span>';
+    } else {
+      anchorDisplay = `<span class="seo-val-text">${_escapeHtml(l.anchor_text || '')}</span>`;
+    }
+
+    let imgAltDisplay = '<span style="color:var(--t3);font-size:0.75rem;">— (Text link)</span>';
+    if (l.has_img) {
+      if (!l.img_alt_present) {
+        imgAltDisplay = '<span class="seo-issue-tag seo-issue-missing">INNER IMG MISSING ALT</span>';
+      } else if (l.img_alt === '') {
+        imgAltDisplay = '<span class="seo-issue-tag seo-issue-empty">INNER IMG EMPTY (alt="")</span>';
+      } else {
+        imgAltDisplay = `<span class="seo-val-text font-mono" style="font-size:0.75rem;">🖼 ${_escapeHtml(l.img_alt)}</span>`;
+      }
+    }
+
+    const typeBadge = l.is_internal 
+      ? '<span class="seo-link-type-badge seo-link-internal">Internal</span>' 
+      : '<span class="seo-link-type-badge seo-link-external">External</span>';
+    const relBadges = (l.rel || []).map(r => `<span class="seo-issue-tag" style="background:var(--s);border:1px solid var(--b);">${_escapeHtml(r)}</span>`).join(' ');
+
+    const filterFlags = [];
+    if (isMissingTitle) filterFlags.push('missing-title');
+    if (l.has_img && (!l.img_alt_present || l.img_alt === '')) filterFlags.push('missing-alt');
+    if (!l.anchor_text && !l.has_img) filterFlags.push('empty-anchor');
+    if (l.is_internal) filterFlags.push('internal');
+    if (!l.is_internal) filterFlags.push('external');
+    if (l.issues && l.issues.length) filterFlags.push('issues');
+
+    return `
+      <tr class="seo-data-row" data-filter="${filterFlags.join(' ')}">
+        <td style="width:30px;font-family:var(--font-mono);color:var(--t3);text-align:center;">${idx + 1}</td>
+        <td style="white-space:nowrap;">${typeBadge} ${relBadges}</td>
+        <td style="max-width:240px;word-break:break-all;">
+          <a href="${_escapeHtml(href)}" target="_blank" rel="noopener" class="tb-url" title="${_escapeHtml(href)}">${_escapeHtml(href.length > 55 ? href.substring(0, 52) + '...' : href)}</a>
+        </td>
+        <td>${anchorDisplay}</td>
+        <td>${titleDisplay}</td>
+        <td>${imgAltDisplay}</td>
+        <td>${_seoIssueList(l.issues)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="seo-table-scroll">
+      <table class="seo-inspector-table">
+        <thead>
+          <tr>
+            <th style="width:30px;text-align:center;">#</th>
+            <th>Type & Rel</th>
+            <th>Target URL (href)</th>
+            <th>Anchor Text</th>
+            <th>TITLE Attribute</th>
+            <th>Image Link ALT</th>
+            <th>Issues</th>
+          </tr>
+        </thead>
+        <tbody id="seoLinksTableBody">
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function _formatSeoItem(item) {
+  if (!item) return '';
+  if (typeof item === 'string') return _escapeHtml(item);
+  if (typeof item === 'object') {
+    const prio = item.priority ? `<span class="badge ${item.priority.toLowerCase() === 'critical' ? 'sev-critical' : item.priority.toLowerCase() === 'high' ? 'sev-high' : 'sev-medium'}" style="margin-right:0.4rem; padding: 2px 6px; font-size: 0.7rem; border-radius: 3px;">${_escapeHtml(item.priority)}</span>` : '';
+    const cat = item.category ? `<span style="color:var(--t3); font-size:0.8rem; margin-right:0.4rem;">[${_escapeHtml(item.category)}]</span>` : '';
+    const title = (item.issue || item.check_name || item.title) ? `<strong>${_escapeHtml(item.issue || item.check_name || item.title)}:</strong> ` : '';
+    const desc = _escapeHtml(item.action || item.recommendation || item.description || item.detail || JSON.stringify(item));
+    return `${prio}${cat}${title}${desc}`;
+  }
+  return _escapeHtml(String(item));
 }
 
 function renderSeoResults(data) {
   const out = document.getElementById('seoResults');
   out.innerHTML = '';
   
-  if (!data || !data.executive_summary) {
-    out.innerHTML = '<div class="empty-st">Invalid report data generated.</div>';
+  if (!data || typeof data !== 'object') {
+    out.innerHTML = `
+      <div class="empty-st" style="padding:2.5rem; text-align:center;">
+        <div style="font-size:1.4rem; margin-bottom:0.5rem; color:var(--cr);">⚠ Scan Incomplete</div>
+        <p style="color:var(--t2); margin-bottom:1.2rem;">The server could not return report data. Please check the URL and run the scan again.</p>
+        <button class="btn-primary" onclick="runSeoAudit()">Run Scan Again</button>
+      </div>`;
     return;
   }
 
+  // Synthesize executive_summary if missing or incomplete
+  if (!data.executive_summary || typeof data.executive_summary !== 'object') {
+    const findings = [];
+    const phasesSrc = (data.phases && typeof data.phases === 'object') ? { ...data.phases, ...data } : data;
+    Object.values(phasesSrc).forEach(ph => {
+      if (ph && Array.isArray(ph.findings)) findings.push(...ph.findings);
+    });
+    const totalChecks = findings.length;
+    const passedChecks = findings.filter(f => (f.status || '').toLowerCase() === 'pass').length;
+    const healthScore = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 70;
+    data.executive_summary = {
+      overall_health_score: healthScore,
+      technical_seo_score: healthScore,
+      performance_score: healthScore,
+      csp_security_score: healthScore,
+      accessibility_score: healthScore,
+      top_critical_issues: findings.filter(f => (f.status || '').toLowerCase() === 'fail' && (f.severity || '').toLowerCase() === 'critical').map(f => f.description || f.check_name).slice(0, 3),
+      top_high_priority_issues: findings.filter(f => (f.status || '').toLowerCase() === 'fail' && (f.severity || '').toLowerCase() === 'high').map(f => f.description || f.check_name).slice(0, 3),
+      top_quick_wins: findings.filter(f => (f.status || '').toLowerCase() === 'fail').map(f => f.recommendation || f.check_name).filter(Boolean).slice(0, 3),
+      positive_findings: findings.filter(f => (f.status || '').toLowerCase() === 'pass').map(f => f.description || f.check_name).slice(0, 3),
+      risks: [],
+      recommended_roadmap: { immediate: [], short_term: [], long_term: [] }
+    };
+  }
+
   const ex = data.executive_summary;
+  ex.overall_health_score = Number(ex.overall_health_score) || 0;
+  ex.technical_seo_score = Number(ex.technical_seo_score) || ex.overall_health_score;
+  ex.performance_score = Number(ex.performance_score) || ex.overall_health_score;
+  ex.csp_security_score = Number(ex.csp_security_score) || ex.overall_health_score;
+  ex.accessibility_score = Number(ex.accessibility_score) || ex.overall_health_score;
   
   let html = `
     <div class="seo-exec-summary">
@@ -1673,11 +2240,11 @@ function renderSeoResults(data) {
     <div class="seo-lists">
       <div class="seo-list-card">
         <h3>Critical Issues</h3>
-        <ul>${(ex.top_critical_issues || []).map(i => `<li>${i}</li>`).join('') || '<li>None</li>'}</ul>
+        <ul>${(ex.top_critical_issues || []).map(i => `<li>${_formatSeoItem(i)}</li>`).join('') || '<li>None</li>'}</ul>
       </div>
       <div class="seo-list-card">
         <h3>Quick Wins</h3>
-        <ul>${(ex.top_quick_wins || []).map(i => `<li>${i}</li>`).join('') || '<li>None</li>'}</ul>
+        <ul>${(ex.top_quick_wins || []).map(i => `<li>${_formatSeoItem(i)}</li>`).join('') || '<li>None</li>'}</ul>
       </div>
     </div>
   `;
@@ -1700,9 +2267,10 @@ function renderSeoResults(data) {
     { key: 'content_quality',        title: 'Content Quality' },
   ];
 
+  const phasesSource = (data.phases && typeof data.phases === 'object') ? { ...data.phases, ...data } : data;
 
   phases.forEach(p => {
-    const phaseData = data[p.key] || { findings: [] };
+    const phaseData = phasesSource[p.key] || { findings: [] };
     const findings = Array.isArray(phaseData.findings) ? phaseData.findings : [];
     if (findings.length === 0) return;
 
@@ -1721,10 +2289,10 @@ function renderSeoResults(data) {
 
       return `
       <div class="seo-issue">
-        <div class="seo-issue-sev"><div class="badge ${badgeClass}">${status}</div></div>
+        <div class="seo-issue-sev"><div class="badge ${badgeClass}">${_escapeHtml(status)}</div></div>
         <div class="seo-issue-desc">
-          <p><strong>${checkName}:</strong> ${desc || '<em>No description available.</em>'}</p>
-          ${rec && !isPass ? `<div class="seo-issue-rec">💡 ${rec}</div>` : ''}
+          <p><strong>${_escapeHtml(checkName)}:</strong> ${_escapeHtml(desc) || '<em>No description available.</em>'}</p>
+          ${rec && !isPass ? `<div class="seo-issue-rec">💡 ${_escapeHtml(rec)}</div>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -1732,7 +2300,7 @@ function renderSeoResults(data) {
     html += `
       <div class="seo-phase">
         <div class="seo-phase-hdr">
-          ${p.title}
+          ${_escapeHtml(p.title)}
           <span style="font-size:0.75rem; font-weight:400; margin-left:auto; display:flex; gap:0.5rem;">
             <span style="color:var(--ac2)">✓ ${passCount} Pass</span>
             <span style="color:var(--cr)">✗ ${failCount} Fail</span>
@@ -1743,13 +2311,12 @@ function renderSeoResults(data) {
     `;
   });
 
-
   if (data.actionable_recommendations && data.actionable_recommendations.length > 0) {
     html += `
       <div class="seo-phase">
         <div class="seo-phase-hdr">Actionable Recommendations</div>
         <div class="seo-phase-body">
-          <ul>${data.actionable_recommendations.map(r => `<li style="margin-bottom:.5rem">${r}</li>`).join('')}</ul>
+          <ul>${data.actionable_recommendations.map(r => `<li style="margin-bottom:.5rem">${_formatSeoItem(r)}</li>`).join('')}</ul>
         </div>
       </div>
     `;
@@ -1757,13 +2324,13 @@ function renderSeoResults(data) {
 
   if (data.pages_scanned && data.pages_scanned.length > 0) {
     let pagesHtml = data.pages_scanned.map(p => {
-      let issues = (p.seo_issues || []).map(i => `<li>${i}</li>`).join('');
+      let issues = (p.seo_issues || []).map(i => `<li>${_escapeHtml(i)}</li>`).join('');
       let statusColor = p.status_code >= 200 && p.status_code < 300 ? 'var(--ac2)' : (p.status_code >= 400 ? 'var(--cr)' : 'var(--hi)');
       return `
         <tr class="seo-page-row">
-          <td><div class="tb-url" title="${p.url}">${p.url}</div></td>
+          <td><div class="tb-url" title="${_escapeHtml(p.url)}">${_escapeHtml(p.url)}</div></td>
           <td style="color:${statusColor}; font-weight:bold;">${p.status_code}</td>
-          <td><div class="tb-title" title="${p.title}">${p.title || 'N/A'}</div></td>
+          <td><div class="tb-title" title="${_escapeHtml(p.title)}">${_escapeHtml(p.title || 'N/A')}</div></td>
           <td><ul style="margin:0; padding-left:1rem; font-size:0.8rem; color:var(--t2)">${issues || '<li>None</li>'}</ul></td>
         </tr>
       `;
@@ -1794,16 +2361,116 @@ function renderSeoResults(data) {
   out.innerHTML = html;
 }
 
-function downloadSeoPdf() {
+async function ensurePdfLibraries() {
+  if (!window.html2canvas) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  if (!window.jspdf && !window.jsPDF) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+}
+
+async function downloadSeoPdf() {
   const element = document.getElementById('seoResults');
   if (!element || element.classList.contains('hidden')) return;
-  const opt = {
-    margin: 0.5,
-    filename: 'QAForge_SEO_Audit.pdf',
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true },
-    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-  };
-  html2pdf().set(opt).from(element).save();
+
+  const btn = document.getElementById('seoPdfBtn');
+  const origText = btn ? btn.innerHTML : '⬇ DOWNLOAD PDF';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Generating PDF…';
+  }
+
+  // Remove any stale overlay
+  document.querySelectorAll('.html2pdf__overlay').forEach(el => el.remove());
+
+  try {
+    await ensurePdfLibraries();
+    const jsPdfConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!jsPdfConstructor || !window.html2canvas) {
+      throw new Error('PDF export libraries failed to initialize.');
+    }
+
+    const bgColor = window.getComputedStyle(element).backgroundColor || '#0b0f19';
+
+    // Capture the SEO results DOM in full fidelity with modern html2canvas
+    const canvas = await window.html2canvas(element, {
+      scale: 1.5,
+      useCORS: true,
+      logging: false,
+      backgroundColor: bgColor
+    });
+
+    if (!canvas || canvas.width === 0 || canvas.height === 0) {
+      throw new Error('Unable to render report canvas.');
+    }
+
+    const pdf = new jsPdfConstructor('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 8; // 8mm margins
+    const contentWidth = pageWidth - (margin * 2);
+    const contentHeight = pageHeight - (margin * 2);
+
+    // Calculate slice dimensions in canvas pixel space
+    const pxPerMm = canvas.width / contentWidth;
+    const sliceHeightPx = Math.floor(contentHeight * pxPerMm);
+
+    let currentY = 0;
+    let pageIndex = 0;
+
+    while (currentY < canvas.height) {
+      if (pageIndex > 0) pdf.addPage();
+
+      const remainingHeight = canvas.height - currentY;
+      const thisSliceHeightPx = Math.min(sliceHeightPx, remainingHeight);
+      const thisSliceHeightMm = thisSliceHeightPx / pxPerMm;
+
+      const sliceCanvas = document.createElement('canvas');
+      sliceCanvas.width = canvas.width;
+      sliceCanvas.height = thisSliceHeightPx;
+      const sCtx = sliceCanvas.getContext('2d');
+
+      sCtx.fillStyle = bgColor;
+      sCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+
+      sCtx.drawImage(
+        canvas,
+        0, currentY, canvas.width, thisSliceHeightPx,
+        0, 0, canvas.width, thisSliceHeightPx
+      );
+
+      const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.95);
+      pdf.addImage(sliceData, 'JPEG', margin, margin, contentWidth, thisSliceHeightMm);
+
+      currentY += thisSliceHeightPx;
+      pageIndex++;
+    }
+
+    const filename = `QAForge_SEO_Audit_${new Date().toISOString().slice(0, 10)}.pdf`;
+    pdf.save(filename);
+    if (typeof toast === 'function') toast('✓ PDF downloaded successfully!', 'ok');
+  } catch (err) {
+    console.error('[SEO PDF] Export failed:', err);
+    alert('Failed to generate PDF: ' + (err.message || 'Unknown error'));
+  } finally {
+    document.querySelectorAll('.html2pdf__overlay').forEach(e => e.remove());
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
 }
 

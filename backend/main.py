@@ -1,6 +1,6 @@
 """QAForge Gemini — FastAPI Backend v4.0"""
 
-import os, json, uuid, base64
+import os, json, uuid, base64, asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -41,12 +41,15 @@ store: dict[str, Any] = {
     "results": {},
     "scans":   {},
     "seo_audits": {},
+    "active_seo_tasks": {},
+    "active_seo_scans": {},
+    "latest_seo_audit": None,
     "config": {
         "api_key_1":     _env(1),
         "api_key_2":     _env(2),
         "api_key_3":     _env(3),
         "api_key_4":     _env(4),
-        "default_model": os.environ.get("DEFAULT_MODEL", "pro"),
+        "default_model": os.environ.get("DEFAULT_MODEL", "flash"),
     }
 }
 
@@ -264,9 +267,79 @@ async def format_bug_image(
 # ── SEO Audit ──────────────────────────────────────────────────────────────────
 @app.post("/api/audit/seo")
 async def seo_audit(req: SeoAuditRequest):
-    result = await ai.seo_audit(req.url, req.depth)
-    store["seo_audits"][result["scan_id"]] = result
-    return result
+    clean_url = req.url.strip()
+    key = f"{clean_url}_{req.depth}"
+
+    # If already running, await the existing task so client disconnects/reconnects don't disrupt
+    if key in store.get("active_seo_tasks", {}):
+        task = store["active_seo_tasks"][key]
+        try:
+            return await task
+        except Exception:
+            pass  # If it failed previously, restart
+
+    async def _execute_scan():
+        res = await ai.seo_audit(clean_url, req.depth)
+        store["seo_audits"][res["scan_id"]] = res
+        store["latest_seo_audit"] = res
+        return res
+
+    scan_task = asyncio.create_task(_execute_scan())
+    if "active_seo_tasks" not in store:
+        store["active_seo_tasks"] = {}
+    if "active_seo_scans" not in store:
+        store["active_seo_scans"] = {}
+
+    store["active_seo_tasks"][key] = scan_task
+    store["active_seo_scans"][key] = {
+        "url": clean_url,
+        "depth": req.depth,
+        "status": "running",
+        "started_at": datetime.now().isoformat(),
+        "scan_id": None,
+    }
+
+    try:
+        result = await scan_task
+        store["active_seo_scans"][key]["status"] = "completed"
+        store["active_seo_scans"][key]["scan_id"] = result.get("scan_id")
+        store["active_seo_scans"][key]["result"] = result
+        return result
+    except Exception as e:
+        store["active_seo_scans"][key]["status"] = "failed"
+        store["active_seo_scans"][key]["error"] = str(e)
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"SEO Audit failed: {e}")
+    finally:
+        store["active_seo_tasks"].pop(key, None)
+
+@app.get("/api/audit/seo/status")
+async def seo_audit_status(url: Optional[str] = None, depth: str = "standard"):
+    if url:
+        key = f"{url.strip()}_{depth}"
+        if key in store.get("active_seo_scans", {}):
+            return store["active_seo_scans"][key]
+        # Check if it was already saved in seo_audits
+        for sid, aud in reversed(list(store.get("seo_audits", {}).items())):
+            if aud.get("url") == url.strip():
+                return {"status": "completed", "result": aud, "scan_id": sid}
+
+    active = [s for s in store.get("active_seo_scans", {}).values() if s.get("status") == "running"]
+    return {
+        "status": "running" if active else "idle",
+        "active_scans": active,
+        "latest": store.get("latest_seo_audit")
+    }
+
+@app.get("/api/audit/seo/latest")
+async def get_latest_seo_audit():
+    if store.get("latest_seo_audit"):
+        return store["latest_seo_audit"]
+    audits = list(store.get("seo_audits", {}).values())
+    if audits:
+        return audits[-1]
+    return {"status": "none"}
 
 @app.get("/api/audit/seo")
 async def list_seo_audits():

@@ -11,6 +11,7 @@ QAForge is a comprehensive testing platform designed to streamline quality assur
   - `main.py` - FastAPI application (routes, middleware, configuration)
   - `models.py` - Pydantic data schemas (TestPlan, TestCase, ExecResult)
   - `report_gen.py` - Report builder (generates Excel with charts, HTML, JSON)
+  - `seo_extractor.py` - [New File]
   - `test_dummy_server.py` - Mock HTTP endpoint for testing proxy setups
   - `test_executor.py` - Test case execution engine (simulations and runs)
   - `test_proxy.py` - HTTP requests proxy executor (handles routing client URLs)
@@ -72,7 +73,6 @@ QAForge is a comprehensive testing platform designed to streamline quality assur
   - `requirements.txt` - Python project dependencies
   - `run.py` - Standard launcher script to run backend server
   - `start.sh` - Simple startup bash shell script
-  - `vercel.json` - [New File]
 
 
 # Objectives
@@ -99,6 +99,7 @@ QAForge is a comprehensive testing platform designed to streamline quality assur
 5. Automated Bug Tracking and Reporting
 6. Proxy-based HTTP Request Execution
 7. Test History Persistence and Result Exports
+8. Deep Technical SEO & Security Audit Engine (SEO META in 1 CLICK aligned extraction, 19-phase analysis, deterministic checks, HTTP security header inspection, XML sitemap/robots.txt verification)
 
 # Constraints
 - Budget: Strict adherence to the allocated development and infrastructure budget.

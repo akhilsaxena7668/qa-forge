@@ -45,3 +45,4 @@ frontend/update_ui.py
 .gemini/
 .vercel
 .wrangler/
+.playwright-mcp/

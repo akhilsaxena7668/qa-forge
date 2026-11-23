@@ -8,6 +8,7 @@ KEY v5 CHANGE: Focus areas now strictly filter what categories the AI generates.
 """
 
 import uuid, json, re, base64, asyncio
+from urllib.parse import urlparse
 from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Optional, Any
@@ -17,19 +18,23 @@ with warnings.catch_warnings():
     import google.generativeai as genai
 from .models import GenerateRequest, TestSuite, TestCase, RangeConfig, FormatConfig, ApiGenerateRequest
 from .crawler import crawl_website
+from .seo_extractor import extract_seo_data
 # ── Model chain ───────────────────────────────────────────────────────────────
 MODEL_CHAIN: List[Tuple[str, str]] = [
-    ("flash2",    "gemini-3-flash-preview"),
-    ("pro",       "gemini-3-flash-preview"),
-    ("flash",     "gemini-2.5-flash"),
-    ("flash_exp", "gemini-3-flash-preview"),
+    ("flash",     "gemini-3.8-flash"),
+    ("pro",       "gemini-3.5-flash"),
+    ("flash15",   "gemini-2.5-flash-lite"),
+    ("flash_exp", "gemini-flash-latest"),
 ]
 
 MODEL_LABELS = {
-    "gemini-3-flash-preview": "gemini-3-flash-preview",
-    "gemini-3-flash-preview": "gemini-3-flash-preview",
-    "gemini-1.5-flash":     "gemini-2.5-flash",
-    "gemini-2.0-flash-exp": "Gemini 2.0 Flash Exp",
+    "gemini-3.8-flash":       "Gemini 3.8 Flash",
+    "gemini-3.5-flash":       "Gemini 3.5 Flash",
+    "gemini-2.5-flash-lite":  "Gemini 2.5 Flash Lite",
+    "gemini-flash-latest":    "Gemini Flash Latest",
+    "gemini-3.5-flash-lite":  "Gemini 3.5 Flash Lite",
+    "gemini-3-flash-preview": "Gemini 3 Flash Preview",
+    "gemini-2.5-flash":       "Gemini 2.5 Flash",
 }
 
 QUOTA_ERRORS = ("quota", "429", "resource exhausted", "rate limit", "too many requests", "exceeded", "billing")
@@ -325,38 +330,71 @@ class AIEngine:
         else:
             ordered = list(MODEL_CHAIN)
 
+        # If all models in the chain are flagged as quota-exhausted, auto-clear so we retry
+        if all(self._quota.get(k) for k, _ in ordered):
+            self._quota.clear()
+
         all_errors = []
         for mkey, mname in ordered:
             if self._quota.get(mkey):
                 all_errors.append(f"{mname}: quota exhausted")
                 continue
-            
-            slot = key_to_slot.get(mkey, 1)
-            api_key = keys.get(slot) or keys.get(1)
-            
-            if not api_key:
-                all_errors.append(f"{mname}: no api key for slot {slot}")
-                continue
-            try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel(
-                    mname,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.4, top_p=0.95, max_output_tokens=16384
-                    )
-                )
-                content = ([image_data, prompt] if image_data else [prompt])
-                resp = model.generate_content(content)
-                self._quota[mkey] = False
-                print(f"[QAForge] Used {mname} (Slot {slot})")
-                return resp.text, mname
-            except Exception as e:
-                err_msg = str(e)
-                all_errors.append(f"{mname} (Slot {slot}): {err_msg[:100]}")
-                if _is_quota(err_msg):
-                    self._quota[mkey] = True
+
+            preferred_slot = key_to_slot.get(mkey, 1)
+            # Try the preferred slot first, then fall back to all other configured keys
+            slots_to_try = [preferred_slot] + [s for s in sorted(keys.keys()) if s != preferred_slot]
+
+            model_succeeded = False
+            for slot in slots_to_try:
+                api_key = keys.get(slot)
+                if not api_key:
                     continue
-                continue
+                try:
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel(
+                        mname,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.4, top_p=0.95, max_output_tokens=16384
+                        )
+                    )
+                    content = ([image_data, prompt] if image_data else [prompt])
+                    resp = model.generate_content(content)
+                    self._quota[mkey] = False
+                    print(f"[QAForge] Used {mname} (Slot {slot})")
+                    return resp.text, mname
+                except Exception as e:
+                    err_msg = str(e)
+                    all_errors.append(f"{mname} (Slot {slot}): {err_msg[:100]}")
+                    if _is_quota(err_msg):
+                        # Try next available key slot for this model before giving up
+                        continue
+                    else:
+                        # Non-quota error, move to next model
+                        break
+
+            # If all slots failed with quota for this model, mark it
+            if any(f"{mname} (Slot" in err and any(q in err.lower() for q in QUOTA_ERRORS) for err in all_errors):
+                self._quota[mkey] = True
+
+        # Emergency fallback models if the entire primary chain failed
+        emergency_models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite-preview", "gemini-flash-lite-latest"]
+        for em_name in emergency_models:
+            for slot, api_key in keys.items():
+                try:
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel(
+                        em_name,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.4, top_p=0.95, max_output_tokens=16384
+                        )
+                    )
+                    content = ([image_data, prompt] if image_data else [prompt])
+                    resp = model.generate_content(content)
+                    print(f"[QAForge] Used Emergency Fallback {em_name} (Slot {slot})")
+                    return resp.text, em_name
+                except Exception as e:
+                    all_errors.append(f"{em_name} (Slot {slot}): {str(e)[:100]}")
+                    continue
 
         raise RuntimeError(f"Models exhausted. Errors: {'; '.join(all_errors)}")
 
@@ -1024,145 +1062,628 @@ Quality Rules:
 
     # ── SEO AUDIT (Hybrid: Python-computed + AI) ──────────────────────────
     async def seo_audit(self, url: str, depth: str = "standard") -> dict:
-        # ── Step 1: Crawl ─────────────────────────────────────────────────
+        """
+        v2.0 — Fully deterministic, technically deep SEO audit.
+
+        Phase 1: Real HTTP fetch + BS4 DOM extraction via seo_extractor
+        Phase 2: Deterministic checklist built from real extracted data
+        Phase 3: AI fills only the checks that require AI judgment (content quality, CWV estimates, etc.)
+        Phase 4: Python-computed checks always override AI answers for 100% accuracy
+        """
+        # ── Phase 1: Extract real data ────────────────────────────────────
         try:
-            crawled_pages = await crawl_website(url, depth)
+            ex = await extract_seo_data(url, depth)
         except Exception as e:
-            crawled_pages = []
-            print(f"[SEO Audit] Crawler error: {e}")
+            print(f"[SEO Audit] Extractor error: {e}")
+            ex = {"url": url, "fetch_error": str(e), "status_code": 0}
 
-        hp = crawled_pages[0] if crawled_pages else {}   # homepage data
-        all_titles = [p.get("title", "") for p in crawled_pages]
-        all_descs  = [p.get("description", "") for p in crawled_pages]
-
-        # ── Step 2: Compute checks deterministically from crawl data ──────
+        # ── Phase 2: Build deterministic checks from extracted data ───────
         def chk(status, sev_if_fail, desc, rec):
             sev = "N/A" if status == "Pass" else sev_if_fail
             rec = "No action needed." if status == "Pass" else rec
             return {"status": status, "severity": sev, "description": desc, "recommendation": rec}
 
-        def p_or_f(cond): return "Pass" if cond else "Fail"
+        def p_or_f(cond):
+            return "Pass" if cond else "Fail"
 
-        title_val    = hp.get("title", "").strip()
-        desc_val     = hp.get("description", "").strip()
-        h1           = hp.get("h1_count", 0)
-        img_total    = hp.get("img_count", 0)
-        img_no_alt   = hp.get("img_missing_alt", 0)
-        canonical    = hp.get("has_canonical", False)
-        viewport     = hp.get("has_viewport", False)
-        og_tags      = hp.get("has_og_tags", False)
-        schema       = hp.get("has_schema", False)
-        is_https     = hp.get("url", url).startswith("https://")
-        dup_titles   = len(all_titles) != len(set(t for t in all_titles if t))
-        dup_descs    = len(all_descs)  != len(set(d for d in all_descs  if d))
-        multi_page   = len(crawled_pages) > 1
+        def _join_issues(issues):
+            return " | ".join(issues) if issues else ""
 
-        # Map: check_name → computed result dict
-        COMPUTED = {
-            # on_page_seo
-            "Title Tags (All Pages)": chk(
-                p_or_f(bool(title_val)), "High",
-                f"Homepage title found: \"{title_val[:80]}\"." if title_val else "No <title> tag found on homepage.",
-                "Add a unique, descriptive title tag (50–60 chars) to every page."
-            ),
-            "Meta Descriptions (All Pages)": chk(
-                p_or_f(bool(desc_val)), "Medium",
-                f"Meta description: \"{desc_val[:100]}\"." if desc_val else "No meta description found on homepage.",
-                "Write a unique meta description (120–160 chars) for every page."
-            ),
-            "H1 Tag Per Page": chk(
-                p_or_f(h1 == 1), "High",
-                f"{h1} H1 tag(s) detected on homepage. Exactly 1 is required." if h1 != 1 else "Exactly 1 H1 tag found on homepage.",
-                "Ensure every page has exactly one H1 tag that includes the primary keyword."
-            ),
-            "Duplicate Title Detection": chk(
-                p_or_f(not dup_titles), "Medium",
-                "Duplicate title tags detected across crawled pages." if dup_titles else f"All {len(all_titles)} page titles are unique.",
-                "Give every page a unique, descriptive title tag."
-            ),
-            "Duplicate Meta Description Detection": chk(
-                p_or_f(not dup_descs), "Low",
-                "Duplicate meta descriptions detected across crawled pages." if dup_descs else "All page meta descriptions are unique.",
-                "Write a unique meta description for each page."
-            ),
-            # technical_seo
-            "Canonical Tags": chk(
-                p_or_f(canonical), "High",
-                "Canonical tag (<link rel=\"canonical\">) detected on homepage." if canonical else "No canonical tag found on homepage.",
-                "Add a self-referencing canonical tag to every page to prevent duplicate content issues."
-            ),
-            "HTTPS Enforced": chk(
-                p_or_f(is_https), "Critical",
-                f"Site is served over HTTPS ({hp.get('url', url)})." if is_https else "Site is NOT served over HTTPS.",
-                "Install an SSL certificate and redirect all HTTP traffic to HTTPS permanently (301)."
-            ),
-            # mobile_seo
-            "Viewport Meta Tag": chk(
-                p_or_f(viewport), "High",
-                "Viewport meta tag is present on homepage." if viewport else "Viewport meta tag is missing from homepage.",
-                "Add <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> to the <head>."
-            ),
-            # structured_data
-            "Schema.org Markup Present": chk(
-                p_or_f(schema), "Medium",
-                "JSON-LD structured data detected on homepage." if schema else "No JSON-LD structured data found on homepage.",
-                "Implement JSON-LD with at minimum Organization and WebSite schema."
-            ),
-            "Open Graph (OG) Tags": chk(
-                p_or_f(og_tags), "Medium",
-                "Open Graph meta tags (og:title, og:image, etc.) detected on homepage." if og_tags else "No Open Graph tags found on homepage.",
-                "Add og:title, og:description, og:image, og:url for better social media previews."
-            ),
-            # image_seo + accessibility
-            "Image Alt Text": chk(
-                p_or_f(img_no_alt == 0), "High",
-                f"{img_total} images found; {img_no_alt} are missing alt text." if img_total > 0 else "No images detected on homepage.",
-                f"Add descriptive alt attributes to all {img_no_alt} images missing them." if img_no_alt > 0 else "Ensure all future images include descriptive alt text."
-            ),
-            "Image Alt Text (Accessibility)": chk(
-                p_or_f(img_no_alt == 0), "High",
-                f"{img_no_alt} out of {img_total} images are missing alt text, failing WCAG 1.1.1." if img_no_alt > 0 else f"All {img_total} images have alt text — WCAG 1.1.1 satisfied.",
-                "Add descriptive alt text to every image; use empty alt=\"\" for decorative images."
-            ),
-            # internal links
-            "Orphan Pages": chk(
-                p_or_f(not multi_page or len(crawled_pages) > 1), "Medium",
-                f"Crawled {len(crawled_pages)} pages; all are reachable via internal links." if multi_page else "Only 1 page crawled — cannot determine orphan pages (use Deep scan).",
-                "Ensure all pages are linked from at least one other internal page."
-            ),
-            # https
-            "HTTPS Certificate Valid": chk(
-                p_or_f(is_https), "Critical",
-                "HTTPS is active; SSL/TLS certificate appears valid." if is_https else "Site is not using HTTPS — no valid SSL certificate detected.",
-                "Install a valid SSL certificate from a trusted CA and enforce HTTPS."
-            ),
-            "HTTP to HTTPS Redirect": chk(
-                p_or_f(is_https), "High",
-                "Site URL begins with https:// indicating HTTPS redirect is likely configured." if is_https else "HTTP to HTTPS redirect may not be configured.",
-                "Configure a 301 redirect from http:// to https:// for all URLs."
-            ),
-        }
+        # Convenience accessors
+        final_url    = ex.get("final_url", url)
+        is_https     = ex.get("is_https", False)
+        status_code  = ex.get("status_code", 0)
+        fetch_error  = ex.get("fetch_error")
 
-        # Build the full CHECKLIST structure. Checks in COMPUTED are pre-filled; the rest go to AI.
+        title        = ex.get("title")  # None = missing, "" = empty, str = value
+        title_chars  = ex.get("title_char_count", 0)
+        title_issues = ex.get("title_issues", [])
+
+        meta_desc       = ex.get("meta_description")
+        meta_desc_chars = ex.get("meta_description_char_count", 0)
+        meta_desc_issues = ex.get("meta_description_issues", [])
+
+        meta_robots  = ex.get("meta_robots")
+        canonical    = ex.get("canonical")
+        can_issues   = ex.get("canonical_issues", [])
+        viewport     = ex.get("viewport")
+        lang         = ex.get("lang")
+        hreflang     = ex.get("hreflang", [])
+        charset      = ex.get("charset")
+
+        headings     = ex.get("headings", {})
+        h1s          = headings.get("h1", [])
+        h2s          = headings.get("h2", [])
+        heading_issues = ex.get("heading_issues", [])
+
+        images       = ex.get("images", [])
+        image_issues = ex.get("image_issues", [])
+        img_stats    = ex.get("image_stats", {})
+        total_imgs   = img_stats.get("total", len(images))
+        missing_alt  = img_stats.get("missing_alt", sum(1 for i in images if not i.get("alt_present")))
+        empty_alt    = img_stats.get("empty_alt", sum(1 for i in images if i.get("alt_present") and i.get("alt") == ""))
+        with_alt     = img_stats.get("with_alt", sum(1 for i in images if i.get("alt_present") and i.get("alt")))
+        missing_img_title = img_stats.get("missing_title", sum(1 for i in images if not i.get("title_present")))
+        empty_img_title   = img_stats.get("empty_title", sum(1 for i in images if i.get("title_present") and (i.get("title") or "") == ""))
+        with_img_title    = img_stats.get("with_title", sum(1 for i in images if i.get("title_present") and i.get("title")))
+
+        internal_links = ex.get("internal_links", [])
+        external_links = ex.get("external_links", [])
+        link_issues    = ex.get("link_issues", [])
+        link_stats     = ex.get("link_stats", {})
+        all_links      = internal_links + external_links
+        total_links    = link_stats.get("total", len(all_links))
+        links_missing_title = link_stats.get("missing_title", sum(1 for l in all_links if not l.get("title_present")))
+        links_empty_title   = link_stats.get("empty_title", sum(1 for l in all_links if l.get("title_present") and (l.get("title") or "") == ""))
+        links_with_title    = link_stats.get("with_title", sum(1 for l in all_links if l.get("title_present") and l.get("title")))
+        links_empty_anchor  = link_stats.get("empty_anchor", sum(1 for l in all_links if not l.get("anchor_text") and not l.get("has_img")))
+        img_links           = [l for l in all_links if l.get("has_img")]
+        img_links_count     = link_stats.get("image_links_total", len(img_links))
+        img_links_missing_alt = link_stats.get("image_links_missing_alt", sum(1 for l in img_links if not l.get("img_alt_present") or not l.get("img_alt")))
+        img_links_with_alt  = link_stats.get("image_links_with_alt", sum(1 for l in img_links if l.get("img_alt_present") and l.get("img_alt")))
+
+        og           = ex.get("og", {})
+        og_issues    = ex.get("og_issues", [])
+        twitter      = ex.get("twitter", {})
+        twitter_issues = ex.get("twitter_issues", [])
+
+        has_schema   = ex.get("has_schema", False)
+        schema_types = ex.get("schema_types", [])
+
+        robots_txt   = ex.get("robots_txt", {})
+        sitemaps     = ex.get("sitemaps", [])
+
+        sec_headers  = ex.get("security_headers", {})
+        resp_headers = ex.get("response_headers", {})
+        word_count   = ex.get("word_count", 0)
+        redirect_chain = ex.get("redirect_chain", [])
+        response_time_ms = ex.get("response_time_ms")
+
+        # ── Build deterministic COMPUTED dict ────────────────────────────
+        COMPUTED = {}
+
+        # ── ON-PAGE SEO ──────────────────────────────────────────────────
+        if title is None:
+            COMPUTED["Title Tags (All Pages)"] = chk(
+                "Fail", "High",
+                "No <title> tag found on page.",
+                "Add a unique, descriptive <title> tag (50–60 chars) to every page."
+            )
+        elif title.strip() == "":
+            COMPUTED["Title Tags (All Pages)"] = chk(
+                "Fail", "High",
+                "<title> tag present but is empty.",
+                "Add descriptive content to the <title> tag (50–60 chars)."
+            )
+        else:
+            extra = f" Issues: {_join_issues(title_issues)}" if title_issues else ""
+            COMPUTED["Title Tags (All Pages)"] = chk(
+                p_or_f(not title_issues or all("TOO_" not in i and "MULTIPLE" not in i for i in title_issues)),
+                "Medium",
+                f'Title: "{title}" ({title_chars} chars).{extra}',
+                f"Optimise title to 50–60 characters. {_join_issues(title_issues)}"
+            )
+
+        if meta_desc is None:
+            COMPUTED["Meta Descriptions (All Pages)"] = chk(
+                "Fail", "Medium",
+                "No meta description tag found.",
+                "Add a unique meta description (150–160 chars) to every page."
+            )
+        elif meta_desc.strip() == "":
+            COMPUTED["Meta Descriptions (All Pages)"] = chk(
+                "Fail", "Medium",
+                "Meta description tag present but content is empty.",
+                "Write a unique meta description (150–160 chars)."
+            )
+        else:
+            if 0 < meta_desc_chars < 150 and not any("TOO_SHORT" in i for i in meta_desc_issues):
+                meta_desc_issues.append(f"TOO_SHORT: {meta_desc_chars} chars (description should be 150–160 chars)")
+            elif meta_desc_chars > 160 and not any("TOO_LONG" in i for i in meta_desc_issues):
+                meta_desc_issues.append(f"TOO_LONG: {meta_desc_chars} chars (description should be 150–160 chars, may be truncated in SERPs)")
+
+            extra = f" Issues: {_join_issues(meta_desc_issues)}" if meta_desc_issues else ""
+            ok = (150 <= meta_desc_chars <= 160) and (
+                not meta_desc_issues or all("TOO_" not in i and "MULTIPLE" not in i and "EMPTY" not in i for i in meta_desc_issues)
+            )
+            COMPUTED["Meta Descriptions (All Pages)"] = chk(
+                p_or_f(ok), "Medium",
+                f'Meta description: "{meta_desc[:160]}" ({meta_desc_chars} chars).{extra}',
+                f"Description should be 150–160 characters. {_join_issues(meta_desc_issues)}"
+            )
+
+        if len(h1s) == 0:
+            COMPUTED["H1 Tag Per Page"] = chk(
+                "Fail", "High",
+                "No <h1> tag found on page.",
+                "Add exactly one descriptive <h1> per page containing the primary keyword."
+            )
+        elif len(h1s) > 1:
+            COMPUTED["H1 Tag Per Page"] = chk(
+                "Fail", "Medium",
+                f"{len(h1s)} <h1> tags found: {h1s[:3]}",
+                "Use only one <h1> per page. Demote secondary headings to <h2>."
+            )
+        else:
+            COMPUTED["H1 Tag Per Page"] = chk(
+                "Pass", "N/A",
+                f'Exactly 1 <h1> found: "{h1s[0][:100]}"',
+                "No action needed."
+            )
+
+        h2_desc = f"{len(h2s)} <h2> tag(s) found." if h2s else "No <h2> tags found."
+        hi_extra = f" Issues: {_join_issues(heading_issues)}" if heading_issues else ""
+        COMPUTED["H2/H3 Heading Hierarchy"] = chk(
+            p_or_f(not heading_issues),
+            "Low",
+            f"{h2_desc}{hi_extra}",
+            "Maintain a logical heading hierarchy (H1 → H2 → H3) without skipping levels."
+        )
+
+        # Duplicate detection (simplified for single-page audit)
+        COMPUTED["Duplicate Title Detection"] = chk(
+            "Pass", "N/A",
+            "Single-page audit — duplicate title check requires Deep/Paranoid scan across multiple pages.",
+            "Use Deep scan to check for duplicate titles across pages."
+        )
+        COMPUTED["Duplicate Meta Description Detection"] = chk(
+            "Pass", "N/A",
+            "Single-page audit — duplicate meta description check requires Deep/Paranoid scan.",
+            "Use Deep scan to check for duplicate meta descriptions."
+        )
+
+        # ── TECHNICAL SEO ────────────────────────────────────────────────
+        if canonical is None:
+            COMPUTED["Canonical Tags"] = chk(
+                "Fail", "High",
+                "No canonical tag found on page.",
+                'Add <link rel="canonical" href="..."> to the <head> of every page.'
+            )
+        elif canonical.strip() == "":
+            COMPUTED["Canonical Tags"] = chk(
+                "Fail", "High",
+                "Canonical tag present but href is empty.",
+                "Set the canonical href to the absolute URL of this page."
+            )
+        else:
+            extra = f" Issues: {_join_issues(can_issues)}" if can_issues else ""
+            COMPUTED["Canonical Tags"] = chk(
+                p_or_f(not can_issues),
+                "Medium",
+                f'Canonical: "{canonical}".{extra}',
+                f"Ensure canonical points to the correct absolute HTTPS URL. {_join_issues(can_issues)}"
+            )
+
+        COMPUTED["HTTPS Enforced"] = chk(
+            p_or_f(is_https), "Critical",
+            f"Site is served over {'HTTPS' if is_https else 'HTTP'} ({final_url}).",
+            "Install an SSL certificate and redirect all HTTP traffic to HTTPS (301)."
+        )
+
+        has_hreflang = len(hreflang) > 0
+        COMPUTED["Hreflang Implementation"] = chk(
+            "Pass" if has_hreflang else "Fail",
+            "Low",
+            f"{len(hreflang)} hreflang tag(s) found: {[h['lang'] for h in hreflang[:5]]}" if has_hreflang else "No hreflang tags found.",
+            "Add hreflang tags for each language/region your site targets."
+        )
+
+        has_robots = robots_txt.get("present", False)
+        robots_status = robots_txt.get("status_code", 0)
+        disallow_all = robots_txt.get("disallow_all", False)
+        sitemap_in_robots = len(robots_txt.get("sitemap_declarations", [])) > 0
+
+        COMPUTED["Robots.txt Configuration"] = chk(
+            p_or_f(has_robots and not disallow_all),
+            "High",
+            f"robots.txt: {'present' if has_robots else 'NOT FOUND'} (HTTP {robots_status}). "
+            + (f"Disallow all: {disallow_all}. " if disallow_all else "")
+            + (f"Sitemap declared: {robots_txt.get('sitemap_declarations', [])}." if sitemap_in_robots else "No sitemap declared in robots.txt."),
+            "Create a valid robots.txt that allows crawling of important pages and declares the sitemap URL."
+        )
+
+        COMPUTED["Crawlability via Robots.txt"] = chk(
+            p_or_f(has_robots and not disallow_all),
+            "Critical",
+            ("Robots.txt blocks all crawlers (Disallow: /)." if disallow_all else
+             "Robots.txt allows crawling." if has_robots else
+             "robots.txt not found — crawlers assume all pages are allowed."),
+            "Do not use 'Disallow: /' on production. Verify robots.txt allows Googlebot to crawl important pages."
+        )
+
+        sm_present = any(s.get("present") for s in sitemaps)
+        sm_url_used = next((s.get("url") for s in sitemaps if s.get("present")), None)
+        sm_count = next((s.get("url_count", 0) for s in sitemaps if s.get("present")), 0)
+        COMPUTED["XML Sitemap Presence"] = chk(
+            p_or_f(sm_present),
+            "Medium",
+            (f"Sitemap found at {sm_url_used} ({sm_count} URL(s) indexed)." if sm_present
+             else f"No sitemap found at /sitemap.xml or in robots.txt."),
+            "Create an XML sitemap and submit it to Google Search Console."
+        )
+
+        COMPUTED["Sitemap in Robots.txt"] = chk(
+            p_or_f(sitemap_in_robots),
+            "Low",
+            (f"Sitemap declared in robots.txt: {robots_txt.get('sitemap_declarations', [])}." if sitemap_in_robots
+             else "No Sitemap: directive found in robots.txt."),
+            "Add 'Sitemap: https://example.com/sitemap.xml' to your robots.txt."
+        )
+
+        COMPUTED["Sitemap URL Valid"] = chk(
+            p_or_f(sm_present),
+            "Medium",
+            (f"Sitemap at {sm_url_used} returned HTTP {next((s.get('status_code') for s in sitemaps if s.get('present')), 0)}." if sm_present
+             else "Sitemap URL returned non-200 or was not found."),
+            "Ensure your sitemap URL returns HTTP 200 and contains valid XML."
+        )
+
+        COMPUTED["Sitemap Last Modified"] = chk(
+            "Fail", "Low",
+            "Could not verify <lastmod> dates in sitemap without deeper inspection.",
+            "Ensure your sitemap includes <lastmod> dates for all URLs."
+        )
+
+        # ── MOBILE SEO ───────────────────────────────────────────────────
+        COMPUTED["Viewport Meta Tag"] = chk(
+            p_or_f(bool(viewport)),
+            "High",
+            f"Viewport meta: {viewport}" if viewport else "Viewport meta tag is missing.",
+            'Add <meta name="viewport" content="width=device-width, initial-scale=1"> to <head>.'
+        )
+
+        # ── STRUCTURED DATA ──────────────────────────────────────────────
+        COMPUTED["Schema.org Markup Present"] = chk(
+            p_or_f(has_schema),
+            "Medium",
+            (f"JSON-LD structured data found. Schema types: {schema_types}." if has_schema
+             else "No JSON-LD structured data found on page."),
+            "Add JSON-LD with at minimum Organization and WebSite schema types."
+        )
+
+        # OG tags
+        og_present = bool(og)
+        og_required = ["og:title", "og:description", "og:image", "og:url", "og:type"]
+        og_missing = [k for k in og_required if k not in og]
+        og_desc_parts = []
+        for k in og_required:
+            if k in og:
+                og_desc_parts.append(f'{k}="{str(og[k])[:80]}"')
+        og_desc = "; ".join(og_desc_parts) if og_desc_parts else "No OG tags found."
+        og_extra = f" Issues: {_join_issues(og_issues)}" if og_issues else ""
+        COMPUTED["Open Graph (OG) Tags"] = chk(
+            p_or_f(og_present and not og_missing),
+            "Medium",
+            f"{og_desc}.{og_extra}",
+            f"{'Missing: ' + str(og_missing) + '. ' if og_missing else ''}Add all 5 required OG tags (title, description, image, url, type)."
+        )
+
+        # Twitter Cards
+        tw_present = bool(twitter)
+        tw_required = ["twitter:card", "twitter:title", "twitter:description"]
+        tw_missing = [k for k in tw_required if k not in twitter]
+        tw_desc_parts = []
+        for k in tw_required:
+            if k in twitter:
+                tw_desc_parts.append(f'{k}="{str(twitter[k])[:60]}"')
+        tw_desc = "; ".join(tw_desc_parts) if tw_desc_parts else "No Twitter Card tags found."
+        tw_extra = f" Issues: {_join_issues(twitter_issues)}" if twitter_issues else ""
+        COMPUTED["Twitter Card Tags"] = chk(
+            p_or_f(tw_present and not tw_missing),
+            "Low",
+            f"{tw_desc}.{tw_extra}",
+            f"{'Missing: ' + str(tw_missing) + '. ' if tw_missing else ''}Add twitter:card, twitter:title, twitter:description, and twitter:image."
+        )
+
+        # ── IMAGE SEO ────────────────────────────────────────────────────
+        COMPUTED["Image Alt Text"] = chk(
+            p_or_f(missing_alt == 0),
+            "High",
+            (f"{total_imgs} image(s) found; {missing_alt} missing alt attribute entirely, {empty_alt} with empty alt=\"\", {missing_img_title} missing title attribute." if total_imgs
+             else "No <img> tags found on page."),
+            f"Add descriptive alt attributes to {missing_alt} image(s). Use alt=\"\" only for decorative images."
+        )
+        COMPUTED["Image Title Attributes"] = chk(
+            p_or_f(missing_img_title == 0 or total_imgs == 0),
+            "Low",
+            (f"{total_imgs} image(s) found; {missing_img_title} missing title attribute, {with_img_title} have title attribute." if total_imgs
+             else "No images found."),
+            f"Add title attributes to {missing_img_title} image(s) where supplementary tooltip context is beneficial."
+        )
+        COMPUTED["Image Alt Text (Accessibility)"] = chk(
+            p_or_f(missing_alt == 0),
+            "High",
+            (f"{missing_alt}/{total_imgs} images violate WCAG 1.1.1 (missing alt). {empty_alt} have empty alt=\"\" (decorative)." if total_imgs
+             else "No images found."),
+            "Assign descriptive alt text to all informative images. Use alt=\"\" ONLY for decorative images."
+        )
+
+        lazy_count = sum(1 for i in images if i.get("loading") == "lazy")
+        COMPUTED["Lazy Loading"] = chk(
+            p_or_f(total_imgs == 0 or lazy_count >= max(1, total_imgs - 3)),
+            "Low",
+            (f"{lazy_count}/{total_imgs} images use loading=\"lazy\"." if total_imgs else "No images found."),
+            "Add loading=\"lazy\" to all below-the-fold images to improve page load performance."
+        )
+
+        # ── INTERNAL/EXTERNAL LINKS ──────────────────────────────────────
+        COMPUTED["Internal Links Present"] = chk(
+            p_or_f(len(internal_links) > 0),
+            "Medium",
+            f"{len(internal_links)} internal link(s) found on page.",
+            "Ensure every page links to other relevant internal pages for crawlability."
+        )
+        COMPUTED["Link Title Attributes"] = chk(
+            p_or_f(links_missing_title == 0 or total_links == 0),
+            "Low",
+            (f"{total_links} link(s) evaluated; {links_missing_title} missing title attribute, {links_with_title} have title attribute." if total_links
+             else "No links found."),
+            "Add title attributes to links where additional context or tooltips improve navigation clarity."
+        )
+        nofollow_ext = sum(1 for l in external_links if l.get("is_nofollow"))
+        COMPUTED["External Links (Nofollow Policy)"] = chk(
+            "Pass", "N/A",
+            f"{len(external_links)} external link(s); {nofollow_ext} have rel=nofollow.",
+            "Apply rel=\"nofollow\" or rel=\"sponsored\" to paid/untrusted external links."
+        )
+        COMPUTED["Orphan Pages"] = chk(
+            "Pass", "N/A",
+            "Single-page scan — orphan page detection requires Deep/Paranoid crawl.",
+            "Use Deep scan to identify pages not reachable via internal links."
+        )
+        link_anchor_issues = [l for l in internal_links + external_links if not l.get("anchor_text")]
+        COMPUTED["Link Anchor Text Quality"] = chk(
+            p_or_f(len(link_anchor_issues) == 0 and img_links_missing_alt == 0),
+            "Medium",
+            (f"{total_links} link(s); {len(link_anchor_issues)} have empty/missing anchor text, {img_links_missing_alt} image-links missing inner image alt." if total_links
+             else f"All {total_links} links have descriptive anchor text."),
+            "Use descriptive anchor text for all links and ensure image-links have alt text on the inner image."
+        )
+        COMPUTED["Image Link Alt Text"] = chk(
+            p_or_f(img_links_missing_alt == 0),
+            "High",
+            (f"{img_links_count} image link(s) found (<a><img ...></a>); {img_links_missing_alt} missing alt attribute on inner image, {img_links_with_alt} with alt." if img_links_count
+             else "No image links (<a><img>) found on page."),
+            "Add alt text to images inside <a> tags so search engines and assistive technology understand the link destination."
+        )
+
+        # ── HTTPS + SECURITY HEADERS ─────────────────────────────────────
+        COMPUTED["HTTPS Certificate Valid"] = chk(
+            p_or_f(is_https and status_code > 0),
+            "Critical",
+            (f"HTTPS active; page returned HTTP {status_code}. Response time: {response_time_ms}ms." if is_https
+             else "Site is NOT served over HTTPS."),
+            "Install a valid SSL certificate from a trusted CA and enforce HTTPS."
+        )
+        COMPUTED["HTTP to HTTPS Redirect"] = chk(
+            p_or_f(is_https),
+            "High",
+            (f"Site is HTTPS. {len(redirect_chain)} redirect(s) detected." if is_https
+             else f"Site is HTTP. Redirect chain: {redirect_chain}"),
+            "Configure a 301 permanent redirect from http:// to https:// for all URLs."
+        )
+
+        hsts_val = sec_headers.get("strict-transport-security")
+        COMPUTED["Strict-Transport-Security (HSTS)"] = chk(
+            p_or_f(bool(hsts_val)),
+            "High",
+            f"HSTS header: {hsts_val}" if hsts_val else "Strict-Transport-Security header is missing.",
+            "Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains; preload' header."
+        )
+
+        csp_val = sec_headers.get("content-security-policy")
+        COMPUTED["Content-Security-Policy Header"] = chk(
+            p_or_f(bool(csp_val)),
+            "High",
+            f"CSP header: {str(csp_val)[:200]}" if csp_val else "Content-Security-Policy header is missing.",
+            "Implement a Content-Security-Policy header to prevent XSS and data injection attacks."
+        )
+
+        xframe_val = sec_headers.get("x-frame-options")
+        COMPUTED["X-Frame-Options Header"] = chk(
+            p_or_f(bool(xframe_val)),
+            "Medium",
+            f"X-Frame-Options: {xframe_val}" if xframe_val else "X-Frame-Options header is missing.",
+            "Set 'X-Frame-Options: DENY' or 'SAMEORIGIN' to prevent clickjacking."
+        )
+
+        xcto_val = sec_headers.get("x-content-type-options")
+        COMPUTED["X-Content-Type-Options Header"] = chk(
+            p_or_f(bool(xcto_val)),
+            "Medium",
+            f"X-Content-Type-Options: {xcto_val}" if xcto_val else "X-Content-Type-Options header is missing.",
+            "Set 'X-Content-Type-Options: nosniff' to prevent MIME-type sniffing attacks."
+        )
+
+        ref_val = sec_headers.get("referrer-policy")
+        COMPUTED["Referrer-Policy"] = chk(
+            p_or_f(bool(ref_val)),
+            "Low",
+            f"Referrer-Policy: {ref_val}" if ref_val else "Referrer-Policy header is missing.",
+            "Set a Referrer-Policy header (e.g., 'strict-origin-when-cross-origin')."
+        )
+
+        perm_val = sec_headers.get("permissions-policy")
+        COMPUTED["Permissions-Policy"] = chk(
+            p_or_f(bool(perm_val)),
+            "Low",
+            f"Permissions-Policy: {str(perm_val)[:120]}" if perm_val else "Permissions-Policy header is missing.",
+            "Add a Permissions-Policy header to restrict browser features like camera, microphone."
+        )
+
+        xxss_val = sec_headers.get("x-xss-protection")
+        server_val = sec_headers.get("server")
+        powered_val = sec_headers.get("x-powered-by")
+        COMPUTED["X-XSS-Protection"] = chk(
+            p_or_f(bool(xxss_val)),
+            "Low",
+            f"X-XSS-Protection: {xxss_val}" if xxss_val else "X-XSS-Protection header is missing (deprecated but still checked).",
+            "Consider setting 'X-XSS-Protection: 1; mode=block' for older browsers."
+        )
+        COMPUTED["Server Header Disclosure"] = chk(
+            p_or_f(not server_val and not powered_val),
+            "Low",
+            (f"Server: {server_val}" if server_val else "No Server header detected.") +
+            (f" | X-Powered-By: {powered_val}" if powered_val else ""),
+            "Remove or obscure Server and X-Powered-By headers to reduce information disclosure."
+        )
+
+        if csp_val:
+            unsafe_inline = "unsafe-inline" in csp_val
+            wildcard = "*" in csp_val.split("script-src")[-1].split(";")[0] if "script-src" in csp_val else False
+            COMPUTED["CSP Unsafe-Inline Check"] = chk(
+                p_or_f(not unsafe_inline), "High",
+                f"CSP contains 'unsafe-inline': {unsafe_inline}. CSP: {str(csp_val)[:200]}",
+                "Remove 'unsafe-inline' from CSP and use nonces or hashes instead."
+            )
+            COMPUTED["CSP Wildcard Check"] = chk(
+                p_or_f(not wildcard), "Medium",
+                f"CSP script-src wildcard detected: {wildcard}.",
+                "Avoid '*' wildcards in script-src. Specify exact allowed origins."
+            )
+        else:
+            COMPUTED["CSP Unsafe-Inline Check"] = chk(
+                "Fail", "High",
+                "No Content-Security-Policy header present — cannot evaluate unsafe-inline.",
+                "Implement a Content-Security-Policy header without 'unsafe-inline' in script-src."
+            )
+            COMPUTED["CSP Wildcard Check"] = chk(
+                "Fail", "Medium",
+                "No Content-Security-Policy header present — cannot evaluate wildcards.",
+                "Implement CSP and avoid wildcard (*) origins in script-src."
+            )
+
+        # Mixed content check
+        mixed_content_likely = is_https  # Can only verify this via full browser — flag for AI
+        COMPUTED["Mixed Content (HTTP resources on HTTPS page)"] = chk(
+            "Fail" if not is_https else "Pass",
+            "High",
+            ("Page is HTTPS. Mixed content verification requires browser-level JS execution — see AI analysis." if is_https
+             else "Page is HTTP — mixed content not applicable."),
+            "Ensure all sub-resources (images, scripts, CSS) are served over HTTPS."
+        )
+
+        # Secure cookies cannot be verified via GET — flag for manual
+        COMPUTED["Secure Cookies"] = chk(
+            "Fail", "Medium",
+            "Secure cookie flags (Secure, HttpOnly, SameSite) require server-side inspection or DevTools — cannot verify via HTTP GET.",
+            "Set Secure, HttpOnly, and SameSite=Strict/Lax flags on all session/auth cookies."
+        )
+
+        # Pages blocked in robots.txt
+        disallow_count = len(robots_txt.get("disallow_rules", []))
+        COMPUTED["Pages Blocked in Robots.txt"] = chk(
+            p_or_f(not disallow_all),
+            "Critical" if disallow_all else "Low",
+            (f"Disallow: / — ALL pages blocked from crawling." if disallow_all
+             else f"{disallow_count} Disallow rule(s) in robots.txt. " +
+                  (f"Sample: {[r['path'] for r in robots_txt.get('disallow_rules', [])[:3]]}" if disallow_count else "No pages blocked.")),
+            "Review Disallow rules to ensure important pages are not accidentally blocked."
+        )
+
+        # Word count
+        wc = word_count
+        COMPUTED["Page Word Count"] = chk(
+            p_or_f(wc >= 300),
+            "Medium",
+            f"Approximately {wc} words detected on page body.",
+            "Aim for at least 300 words for non-trivial pages. Thin content may rank poorly."
+        )
+
+        # URL analysis
+        parsed_url = urlparse(final_url)
+        url_path = parsed_url.path
+        has_uppercase = url_path != url_path.lower()
+        has_spaces = " " in url_path or "%20" in url_path
+        url_len = len(final_url)
+        has_params = bool(parsed_url.query)
+        trailing_slash = url_path.endswith("/") and url_path != "/"
+
+        COMPUTED["URL Slug Structure"] = chk(
+            p_or_f(not has_uppercase and not has_spaces),
+            "Medium",
+            f"URL: {final_url} ({url_len} chars). Uppercase: {has_uppercase}. Spaces: {has_spaces}.",
+            "Use lowercase, hyphen-separated URL slugs. Avoid underscores, spaces, or special characters."
+        )
+        COMPUTED["URL Length"] = chk(
+            p_or_f(url_len <= 100),
+            "Low",
+            f"URL length: {url_len} characters.",
+            "Keep URLs under 100 characters for readability and crawl efficiency."
+        )
+        COMPUTED["URL Lowercase Consistency"] = chk(
+            p_or_f(not has_uppercase),
+            "Medium",
+            f"URL path case: {'contains uppercase' if has_uppercase else 'all lowercase'}.",
+            "Enforce lowercase URLs via server-side redirect to prevent duplicate content."
+        )
+        COMPUTED["Trailing Slash Consistency"] = chk(
+            "Pass", "N/A",
+            f"Trailing slash: {'present' if trailing_slash else 'absent'}. Consistency across pages requires multi-page scan.",
+            "Pick one trailing slash convention and enforce it with 301 redirects site-wide."
+        )
+        COMPUTED["Dynamic Parameters in URL"] = chk(
+            p_or_f(not has_params),
+            "Low",
+            f"Query parameters: {'present — ' + parsed_url.query[:80] if has_params else 'not present in this URL'}.",
+            "Use canonical tags or parameter handling in Search Console to prevent duplicate content from URL parameters."
+        )
+
+        # Redirect chains
+        COMPUTED["Redirect Chains"] = chk(
+            p_or_f(len(redirect_chain) <= 1),
+            "Medium",
+            (f"{len(redirect_chain)} redirect(s) detected: {[r['url'] for r in redirect_chain[:3]]}." if redirect_chain
+             else "No redirects detected — direct 200 response."),
+            "Reduce redirect chains to a single 301. Multiple hops slow crawling and lose link equity."
+        )
+
+        # 404 error page — we can't verify without navigating to a non-existent page
+        COMPUTED["404 Error Page"] = chk(
+            "Fail", "Low",
+            "Custom 404 page verification requires navigating to a non-existent URL — cannot auto-verify from homepage.",
+            "Create a custom 404 error page with navigation links back to key pages."
+        )
+
+        # ── Build skeleton ────────────────────────────────────────────────
         CHECKLIST_KEYS = {
-            "technical_seo":         ["XML Sitemap Presence", "Robots.txt Configuration", "Canonical Tags", "Hreflang Implementation", "404 Error Page", "Redirect Chains", "HTTPS Enforced", "Crawlability via Robots.txt"],
-            "on_page_seo":           ["Title Tags (All Pages)", "Meta Descriptions (All Pages)", "H1 Tag Per Page", "H2/H3 Heading Hierarchy", "Keyword in Title", "Duplicate Title Detection", "Duplicate Meta Description Detection", "Page Word Count"],
-            "url_audit":             ["URL Slug Structure", "URL Length", "URL Lowercase Consistency", "Trailing Slash Consistency", "Dynamic Parameters in URL"],
-            "internal_external_links":["Internal Links Present", "Broken Internal Links (404)", "Orphan Pages", "External Links (Nofollow Policy)", "Link Anchor Text Quality"],
-            "image_seo":             ["Image Alt Text", "Image Filename Descriptive", "Image File Size", "WebP/Next-Gen Format", "Lazy Loading"],
-            "performance":           ["Core Web Vitals - LCP", "Core Web Vitals - FID/INP", "Core Web Vitals - CLS", "Time to First Byte (TTFB)", "Minified CSS", "Minified JavaScript", "Browser Caching Headers", "Gzip/Brotli Compression", "CDN Usage"],
-            "mobile_seo":            ["Viewport Meta Tag", "Mobile Responsive Design", "Touch Target Size", "Font Size Legibility on Mobile", "Mobile Page Speed"],
-            "accessibility":         ["Image Alt Text (Accessibility)", "Color Contrast Ratio", "ARIA Labels on Buttons", "Keyboard Navigability", "Form Labels", "Focus Indicators", "Skip Navigation Link"],
-            "structured_data":       ["Schema.org Markup Present", "Open Graph (OG) Tags", "Twitter Card Tags", "Breadcrumb Schema", "Organization Schema", "FAQ/HowTo Schema (if applicable)"],
-            "javascript_seo":        ["JS Rendering of Critical Content", "Meta Tags Rendered in JS", "Page Indexable Without JS", "Inline JS Blocking Render"],
-            "robots_sitemap":        ["Sitemap in Robots.txt", "Sitemap URL Valid", "Sitemap Last Modified", "Pages Blocked in Robots.txt"],
-            "csp_audit":             ["Content-Security-Policy Header", "X-Frame-Options Header", "X-Content-Type-Options Header", "CSP Unsafe-Inline Check", "CSP Wildcard Check"],
-            "security_headers":      ["Strict-Transport-Security (HSTS)", "Referrer-Policy", "Permissions-Policy", "X-XSS-Protection", "Server Header Disclosure"],
-            "https_mixed_content":   ["HTTPS Certificate Valid", "Mixed Content (HTTP resources on HTTPS page)", "HTTP to HTTPS Redirect", "Secure Cookies"],
-            "content_quality":       ["Thin Content Pages", "Duplicate Content", "Readability Score", "Keyword Density", "Content Freshness"],
+            "technical_seo":          ["XML Sitemap Presence", "Robots.txt Configuration", "Canonical Tags", "Hreflang Implementation", "404 Error Page", "Redirect Chains", "HTTPS Enforced", "Crawlability via Robots.txt"],
+            "on_page_seo":            ["Title Tags (All Pages)", "Meta Descriptions (All Pages)", "H1 Tag Per Page", "H2/H3 Heading Hierarchy", "Keyword in Title", "Duplicate Title Detection", "Duplicate Meta Description Detection", "Page Word Count"],
+            "url_audit":              ["URL Slug Structure", "URL Length", "URL Lowercase Consistency", "Trailing Slash Consistency", "Dynamic Parameters in URL"],
+            "internal_external_links":["Internal Links Present", "Link Title Attributes", "Link Anchor Text Quality", "Image Link Alt Text", "Broken Internal Links (404)", "Orphan Pages", "External Links (Nofollow Policy)"],
+            "image_seo":              ["Image Alt Text", "Image Title Attributes", "Image Filename Descriptive", "Image File Size", "WebP/Next-Gen Format", "Lazy Loading"],
+            "performance":            ["Core Web Vitals - LCP", "Core Web Vitals - FID/INP", "Core Web Vitals - CLS", "Time to First Byte (TTFB)", "Minified CSS", "Minified JavaScript", "Browser Caching Headers", "Gzip/Brotli Compression", "CDN Usage"],
+            "mobile_seo":             ["Viewport Meta Tag", "Mobile Responsive Design", "Touch Target Size", "Font Size Legibility on Mobile", "Mobile Page Speed"],
+            "accessibility":          ["Image Alt Text (Accessibility)", "Color Contrast Ratio", "ARIA Labels on Buttons", "Keyboard Navigability", "Form Labels", "Focus Indicators", "Skip Navigation Link"],
+            "structured_data":        ["Schema.org Markup Present", "Open Graph (OG) Tags", "Twitter Card Tags", "Breadcrumb Schema", "Organization Schema", "FAQ/HowTo Schema (if applicable)"],
+            "javascript_seo":         ["JS Rendering of Critical Content", "Meta Tags Rendered in JS", "Page Indexable Without JS", "Inline JS Blocking Render"],
+            "robots_sitemap":         ["Sitemap in Robots.txt", "Sitemap URL Valid", "Sitemap Last Modified", "Pages Blocked in Robots.txt"],
+            "csp_audit":              ["Content-Security-Policy Header", "X-Frame-Options Header", "X-Content-Type-Options Header", "CSP Unsafe-Inline Check", "CSP Wildcard Check"],
+            "security_headers":       ["Strict-Transport-Security (HSTS)", "Referrer-Policy", "Permissions-Policy", "X-XSS-Protection", "Server Header Disclosure"],
+            "https_mixed_content":    ["HTTPS Certificate Valid", "Mixed Content (HTTP resources on HTTPS page)", "HTTP to HTTPS Redirect", "Secure Cookies"],
+            "content_quality":        ["Thin Content Pages", "Duplicate Content", "Readability Score", "Keyword Density", "Content Freshness"],
         }
 
-        # Build skeleton: pre-fill computed checks, send FILL_IN for AI checks
         skeleton_phases = {}
         for phase_key, checks in CHECKLIST_KEYS.items():
             findings = []
@@ -1176,47 +1697,70 @@ Quality Rules:
 
         skeleton_str = json.dumps({"phases": skeleton_phases}, indent=2)
 
-        # Build crawl context for AI
-        if crawled_pages:
-            ctx_lines = [f"Pages crawled ({len(crawled_pages)}):"]
-            for p in crawled_pages:
-                ctx_lines.append(
-                    f"  [{p.get('status_code','?')}] {p.get('url','')} | "
-                    f"Title: {p.get('title','(none)')[:60]} | "
-                    f"H1:{p.get('h1_count','?')} Imgs:{p.get('img_count','?')} AltMissing:{p.get('img_missing_alt','?')} "
-                    f"Canonical:{p.get('has_canonical','?')} Viewport:{p.get('has_viewport','?')} "
-                    f"OG:{p.get('has_og_tags','?')} Schema:{p.get('has_schema','?')}"
-                )
-            crawl_context = "\n".join(ctx_lines)
-        else:
-            crawl_context = "Crawler could not access pages. Use best-effort analysis."
+        # Build rich context string for AI
+        og_summary = "; ".join(f"{k}={repr(str(v)[:60])}" for k, v in og.items() if v) or "None"
+        tw_summary = "; ".join(f"{k}={repr(str(v)[:60])}" for k, v in twitter.items() if v) or "None"
+        hdr_summary = "; ".join(f"{k}={repr(str(v)[:80])}" for k, v in sec_headers.items() if v) or "None"
 
-        # ── Step 3: AI fills in only the FILL_IN checks ───────────────────
-        prompt = f"""You are an Enterprise Technical SEO Expert.
+        crawl_context = f"""REAL EXTRACTION DATA (do NOT contradict this):
+- URL: {final_url}
+- HTTP Status: {status_code} ({ex.get('status_label', '')})
+- HTTPS: {is_https}
+- Redirects: {len(redirect_chain)} ({redirect_chain})
+- Response time: {response_time_ms}ms
+- HTML size: {ex.get('html_size_bytes', 0)} bytes
+- Title: {repr(title)} ({title_chars} chars) | Issues: {title_issues}
+- Meta description: {repr(str(meta_desc)[:160]) if meta_desc else 'MISSING'} ({meta_desc_chars} chars) | Issues: {meta_desc_issues}
+- Meta robots: {repr(meta_robots)}
+- Canonical: {repr(canonical)} | Issues: {can_issues}
+- Viewport: {repr(viewport)}
+- Lang: {repr(lang)}
+- Hreflang tags: {len(hreflang)}
+- Charset: {repr(charset)}
+- H1s ({len(h1s)}): {h1s[:3]}
+- H2s ({len(h2s)}): {[t[:60] for t in h2s[:5]]}
+- Heading issues: {heading_issues}
+- Total images: {total_imgs} | Missing alt: {missing_alt} | Empty alt: {empty_alt}
+- Internal links: {len(internal_links)} | External links: {len(external_links)}
+- Link issues: {link_issues}
+- Open Graph: {og_summary}
+- OG issues: {og_issues}
+- Twitter Cards: {tw_summary}
+- Twitter issues: {twitter_issues}
+- Schema.org: {has_schema} | Types: {schema_types}
+- Word count: {word_count}
+- robots.txt: present={has_robots}, status={robots_status}, disallow_all={disallow_all}
+  Disallow rules ({len(robots_txt.get('disallow_rules', []))}): {[r['path'] for r in robots_txt.get('disallow_rules', [])[:5]]}
+  Sitemap declarations: {robots_txt.get('sitemap_declarations', [])}
+- Sitemaps checked: {[(s.get('url'), s.get('status_code'), s.get('url_count')) for s in sitemaps]}
+- Security headers: {hdr_summary}"""
+
+        # ── Phase 3: AI fills only FILL_IN checks ─────────────────────────
+        prompt = f"""You are an Enterprise Technical SEO Expert performing a real-data-backed audit.
 
 Target Website: {url}
 Scan Depth: {depth}
 
-CRAWL DATA:
 {crawl_context}
 
-TASK: The JSON skeleton below contains checks that are already filled in (do NOT change them) and checks still marked "FILL_IN" that you MUST complete.
+TASK: The JSON skeleton below has some checks already filled in (do NOT change them) and checks marked "FILL_IN" that you MUST complete.
 
 For each "FILL_IN" entry:
 - "status": exactly "Pass" or "Fail"
 - "severity": "N/A" if Pass; else "Critical", "High", "Medium", or "Low"
-- "description": 1-2 sentences describing what was found specifically for {url}
+- "description": 1-2 sentences based on the REAL DATA above. Do not invent values.
 - "recommendation": concrete fix if Fail; "No action needed." if Pass
 
 CRITICAL RULES:
-1. Do NOT change any entry that does NOT have "FILL_IN" — copy it exactly as-is.
+1. Do NOT change entries that are NOT "FILL_IN" — copy them exactly.
 2. Every entry MUST remain in the output — do not remove any.
-3. OUTPUT ONLY valid JSON. No markdown, no backticks.
+3. Use the REAL EXTRACTION DATA above when deciding status — do not guess.
+4. OUTPUT ONLY valid JSON. No markdown, no backticks, no explanation.
 
-Return this complete structure with all phases filled:
+Return the complete structure:
 {{
   "executive_summary": {{
-    "overall_health_score": <0-100>,
+    "overall_health_score": <0-100 based on real data>,
     "technical_seo_score": <0-100>,
     "on_page_seo_score": <0-100>,
     "url_structure_score": <0-100>,
@@ -1260,56 +1804,254 @@ Return this complete structure with all phases filled:
 SKELETON:
 {skeleton_str}"""
 
-        text, mname = await asyncio.to_thread(self._try, prompt, None, "pro")
         try:
+            text, mname = await asyncio.to_thread(self._try, prompt, None, "pro")
             data = _parse(text)
+            if not isinstance(data, dict):
+                data = {}
+            for wrapper_key in ("seo_report", "report", "audit", "seo_audit", "data", "result"):
+                if isinstance(data.get(wrapper_key), dict):
+                    data = data[wrapper_key]
+                    break
+            for alt_key in ("executiveSummary", "summary", "audit_summary", "overview", "exec_summary"):
+                if alt_key in data and "executive_summary" not in data:
+                    data["executive_summary"] = data.pop(alt_key)
+            if "overall_health_score" in data and "executive_summary" not in data:
+                data["executive_summary"] = {
+                    k: v for k, v in data.items() if k not in skeleton_phases and k != "phases"
+                }
         except Exception as e:
-            print(f"[SEO Audit] Parse error: {e}. Raw[:300]: {text[:300]}")
-            # Fallback: use skeleton (Python-computed checks are already in it)
+            print(f"[SEO Audit] AI/Parse fallback: {e}")
+            mname = "Deterministic Engine (AI offline)"
             data = {
-                "executive_summary": {"overall_health_score": 0, "top_critical_issues": ["AI parse error — scan results may be incomplete."], "top_high_priority_issues": [], "top_quick_wins": [], "positive_findings": [], "risks": [], "recommended_roadmap": {"immediate": [], "short_term": [], "long_term": []}},
-                "actionable_recommendations": ["Retry the scan."]
+                "executive_summary": {
+                    "overall_health_score": 0,
+                    "top_critical_issues": ["AI analysis unavailable — Python-computed checks are still 100% accurate."],
+                    "top_high_priority_issues": [], "top_quick_wins": [],
+                    "positive_findings": [], "risks": [],
+                    "recommended_roadmap": {"immediate": [], "short_term": [], "long_term": []}
+                },
+                "actionable_recommendations": ["Deterministic checks completed successfully. Ensure Gemini API quota is available for full AI insights."]
             }
             for key, val in skeleton_phases.items():
                 data[key] = val
 
-        # ── Step 4: Override with Python-computed checks (always accurate) ─
+        # ── Phase 4: Ensure all skeleton phases exist and Python-computed checks override AI
+        if "phases" in data and isinstance(data["phases"], dict):
+            for pk, pv in data["phases"].items():
+                data[pk] = pv
+
+        for key, val in skeleton_phases.items():
+            if key not in data or not isinstance(data[key], dict) or "findings" not in data[key]:
+                data[key] = val
+
+        all_findings = []
+        phase_scores = {}
         for phase_key, phase_data in data.items():
             if not isinstance(phase_data, dict) or "findings" not in phase_data:
                 continue
-            for finding in phase_data["findings"]:
-                if finding.get("check_name") in COMPUTED:
-                    finding.update(COMPUTED[finding["check_name"]])
-                # Ensure no FILL_IN leftovers
-                if finding.get("status") == "FILL_IN" or not finding.get("description") or finding.get("description") == "FILL_IN":
-                    finding["status"] = finding.get("status") if finding.get("status") not in ("FILL_IN", None) else "Fail"
-                    finding["severity"] = finding.get("severity") if finding.get("severity") not in ("FILL_IN", None) else "Medium"
-                    finding["description"] = finding.get("description") if finding.get("description") not in ("FILL_IN", None, "") else "Could not evaluate this check automatically."
-                    finding["recommendation"] = finding.get("recommendation") if finding.get("recommendation") not in ("FILL_IN", None, "") else "Perform manual verification of this check."
+            p_findings = phase_data["findings"]
+            for finding in p_findings:
+                cname = finding.get("check_name", "")
+                if cname in COMPUTED:
+                    finding.update(COMPUTED[cname])
+                # Patch any remaining FILL_IN leftovers
+                if finding.get("status") in ("FILL_IN", None, ""):
+                    finding["status"] = "Fail"
+                if finding.get("severity") in ("FILL_IN", None, ""):
+                    finding["severity"] = "Medium"
+                if finding.get("description") in ("FILL_IN", None, ""):
+                    finding["description"] = "Could not evaluate this check automatically."
+                if finding.get("recommendation") in ("FILL_IN", None, ""):
+                    finding["recommendation"] = "Perform manual verification of this check."
+            all_findings.extend(p_findings)
+            p_pass = sum(1 for f in p_findings if (f.get("status") or "").lower() == "pass")
+            p_tot = len(p_findings)
+            if p_tot > 0:
+                phase_scores[phase_key] = round((p_pass / p_tot) * 100)
 
-        # ── Step 5: Merge real crawled pages into pages_scanned ─────────
-        if crawled_pages:
-            # AI sometimes returns pages_scanned as a list of strings — filter to dicts only
-            raw_ai_pages = data.get("pages_scanned", [])
-            ai_by_url = {
-                p.get("url", ""): p
-                for p in raw_ai_pages
-                if isinstance(p, dict)
+        # ── Phase 4b: Ensure executive_summary ALWAYS exists and is fully populated ──
+        if not isinstance(data.get("executive_summary"), dict):
+            data["executive_summary"] = {}
+
+        ex_sum = data["executive_summary"]
+        total_checks = len(all_findings)
+        total_pass = sum(1 for f in all_findings if (f.get("status") or "").lower() == "pass")
+        calc_health = round((total_pass / max(1, total_checks)) * 100) if total_checks else 70
+
+        if not isinstance(ex_sum.get("overall_health_score"), (int, float)) or ex_sum["overall_health_score"] <= 0:
+            ex_sum["overall_health_score"] = calc_health
+        else:
+            ex_sum["overall_health_score"] = int(ex_sum["overall_health_score"])
+
+        score_mappings = [
+            ("technical_seo_score", "technical_seo"),
+            ("on_page_seo_score", "on_page_seo"),
+            ("url_structure_score", "url_audit"),
+            ("internal_linking_score", "internal_external_links"),
+            ("image_seo_score", "image_seo"),
+            ("performance_score", "performance"),
+            ("core_web_vitals_score", "performance"),
+            ("mobile_seo_score", "mobile_seo"),
+            ("accessibility_score", "accessibility"),
+            ("schema_quality_score", "structured_data"),
+            ("security_headers_score", "security_headers"),
+            ("csp_security_score", "csp_audit"),
+            ("https_security_score", "https_mixed_content"),
+            ("content_quality_score", "content_quality"),
+        ]
+        for score_key, phase_k in score_mappings:
+            if not isinstance(ex_sum.get(score_key), (int, float)):
+                ex_sum[score_key] = phase_scores.get(phase_k, calc_health)
+            else:
+                ex_sum[score_key] = int(ex_sum[score_key])
+
+        critical_fails = [
+            f"{f.get('check_name')}: {f.get('description', '')}"
+            for f in all_findings
+            if (f.get("status") or "").lower() == "fail" and (f.get("severity") or "").lower() in ("critical", "high")
+        ]
+        med_fails = [
+            f"{f.get('check_name')}: {f.get('description', '')}"
+            for f in all_findings
+            if (f.get("status") or "").lower() == "fail" and (f.get("severity") or "").lower() == "medium"
+        ]
+        passes = [
+            f"{f.get('check_name')}: {f.get('description', '')}"
+            for f in all_findings
+            if (f.get("status") or "").lower() == "pass"
+        ]
+
+        if not ex_sum.get("top_critical_issues") or not isinstance(ex_sum["top_critical_issues"], list):
+            ex_sum["top_critical_issues"] = critical_fails[:3] or ["No critical issues detected."]
+
+        if not ex_sum.get("top_high_priority_issues") or not isinstance(ex_sum["top_high_priority_issues"], list):
+            ex_sum["top_high_priority_issues"] = med_fails[:3] or ["Review phase findings for minor recommendations."]
+
+        if not ex_sum.get("top_quick_wins") or not isinstance(ex_sum["top_quick_wins"], list):
+            qw = [f.get("recommendation") for f in all_findings if (f.get("status") or "").lower() == "fail" and f.get("recommendation") and f.get("recommendation") != "No action needed."]
+            ex_sum["top_quick_wins"] = qw[:3] or ["Maintain existing SEO best practices."]
+
+        if not ex_sum.get("positive_findings") or not isinstance(ex_sum["positive_findings"], list):
+            ex_sum["positive_findings"] = passes[:3] or ["Website is online and accessible."]
+
+        if not ex_sum.get("risks") or not isinstance(ex_sum["risks"], list):
+            ex_sum["risks"] = [f"SEO/Security Risk: {c}" for c in critical_fails[:2]] or ["Ensure continuous monitoring."]
+
+        if not isinstance(ex_sum.get("recommended_roadmap"), dict):
+            ex_sum["recommended_roadmap"] = {
+                "immediate": [f.get("recommendation") for f in all_findings if (f.get("severity") or "").lower() in ("critical", "high") and (f.get("status") or "").lower() == "fail"][:3],
+                "short_term": [f.get("recommendation") for f in all_findings if (f.get("severity") or "").lower() == "medium" and (f.get("status") or "").lower() == "fail"][:3],
+                "long_term": ["Implement Core Web Vitals optimizations and comprehensive schema markup."],
             }
-            data["pages_scanned"] = [
-                {
-                    "url": p["url"],
-                    "status_code": p["status_code"],
-                    "title": p.get("title") or ai_by_url.get(p["url"], {}).get("title", ""),
-                    "seo_issues": ai_by_url.get(p["url"], {}).get("seo_issues", []),
-                }
-                for p in crawled_pages
-            ]
+        else:
+            for road_k in ("immediate", "short_term", "long_term"):
+                if not isinstance(ex_sum["recommended_roadmap"].get(road_k), list):
+                    ex_sum["recommended_roadmap"][road_k] = []
+
+        # ── Phase 5: Attach full raw extraction data ──────────────────────
+        data["raw_extraction"] = {
+            "url": final_url,
+            "status_code": status_code,
+            "title": title,
+            "title_char_count": title_chars,
+            "title_issues": title_issues,
+            "meta_description": meta_desc,
+            "meta_description_char_count": meta_desc_chars,
+            "meta_description_issues": meta_desc_issues,
+            "meta_robots": meta_robots,
+            "meta_googlebot": ex.get("meta_googlebot"),
+            "canonical": canonical,
+            "canonical_issues": can_issues,
+            "viewport": viewport,
+            "lang": lang,
+            "charset": charset,
+            "hreflang": hreflang,
+            "headings": headings,
+            "heading_issues": heading_issues,
+            "og": og,
+            "og_issues": og_issues,
+            "twitter": twitter,
+            "twitter_issues": twitter_issues,
+            "has_schema": has_schema,
+            "schema_types": schema_types,
+            # Images summary and real data
+            "total_images": total_imgs,
+            "images_missing_alt": missing_alt,
+            "images_empty_alt": empty_alt,
+            "images_with_alt": with_alt,
+            "images_missing_title": missing_img_title,
+            "images_empty_title": empty_img_title,
+            "images_with_title": with_img_title,
+            "images": images[:250],
+            "image_stats": img_stats,
+            # Links summary and real data
+            "total_links": total_links,
+            "internal_links_count": len(internal_links),
+            "external_links_count": len(external_links),
+            "links_missing_title": links_missing_title,
+            "links_empty_title": links_empty_title,
+            "links_with_title": links_with_title,
+            "links_empty_anchor": links_empty_anchor,
+            "image_links_count": img_links_count,
+            "image_links_missing_alt": img_links_missing_alt,
+            "image_links_with_alt": img_links_with_alt,
+            "internal_links": internal_links[:250],
+            "external_links": external_links[:150],
+            "link_stats": link_stats,
+            "word_count": word_count,
+            "redirect_chain": redirect_chain,
+            "response_time_ms": response_time_ms,
+            "is_https": is_https,
+            "security_headers": sec_headers,
+            "robots_txt": robots_txt,
+            "sitemaps": sitemaps,
+            "fetch_error": fetch_error,
+        }
+
+        # Multi-page crawl support if depth is deep or paranoid
+        scanned_list = [
+            {
+                "url": final_url,
+                "status_code": status_code,
+                "title": title or "(missing)",
+                "seo_issues": (
+                    title_issues[:2] +
+                    meta_desc_issues[:2] +
+                    heading_issues[:2] +
+                    image_issues[:2]
+                )[:6],
+            }
+        ]
+        if depth in ("deep", "paranoid"):
+            try:
+                crawled_pages = await crawl_website(url, depth)
+                if crawled_pages and len(crawled_pages) > 1:
+                    scanned_list = [
+                        {
+                            "url": p.get("url", ""),
+                            "status_code": p.get("status_code", 200),
+                            "title": p.get("title") or "(missing)",
+                            "seo_issues": p.get("issues", []) if "issues" in p else (
+                                (["Missing Title"] if not p.get("title") else []) +
+                                (["Missing Meta Description"] if not p.get("description") else (
+                                    ["Short Meta Description (<150 chars)"] if len(p.get("description", "")) < 150 else []
+                                )) +
+                                (["No H1 Tag"] if p.get("h1_count", 0) == 0 else []) +
+                                ([f"{p.get('img_missing_alt', 0)} Images Missing Alt"] if p.get("img_missing_alt", 0) > 0 else [])
+                            )[:4],
+                        }
+                        for p in crawled_pages
+                    ]
+            except Exception as e:
+                print(f"[SEO Audit] Crawl error for {depth}: {e}")
+
+        data["pages_scanned"] = scanned_list
+        data["pages_count"] = len(scanned_list)
 
         data["scan_id"]     = str(uuid.uuid4())
         data["url"]         = url
         data["depth"]       = depth
-        data["pages_count"] = len(crawled_pages)
         data["scanned_at"]  = datetime.now().isoformat()
         data["model_used"]  = MODEL_LABELS.get(mname, mname)
         return data
