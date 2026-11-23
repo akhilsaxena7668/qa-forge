@@ -21,8 +21,8 @@ from .crawler import crawl_website
 from .seo_extractor import extract_seo_data
 # ── Model chain ───────────────────────────────────────────────────────────────
 MODEL_CHAIN: List[Tuple[str, str]] = [
-    ("flash",     "gemini-3.8-flash"),
-    ("pro",       "gemini-3.5-flash"),
+    ("flash",     "gemini-2.5-flash"),
+    ("pro",       "gemini-2.5-pro"),
     ("flash15",   "gemini-2.5-flash-lite"),
     ("flash_exp", "gemini-flash-latest"),
 ]
@@ -309,10 +309,10 @@ class AIEngine:
         keys = {}
         for i in range(1, 5):
             k = cfg.get(f"api_key_{i}", "").strip()
-            if k:
+            if k and k.startswith("AIza"):
                 keys[i] = k
         single = cfg.get("api_key", "").strip()
-        if single and 1 not in keys:
+        if single and 1 not in keys and single.startswith("AIza"):
             keys[1] = single
         return keys
 
@@ -350,7 +350,7 @@ class AIEngine:
                 if not api_key:
                     continue
                 try:
-                    genai.configure(api_key=api_key)
+                    genai.configure(api_key=api_key, transport="rest")
                     model = genai.GenerativeModel(
                         mname,
                         generation_config=genai.types.GenerationConfig(
@@ -381,7 +381,7 @@ class AIEngine:
         for em_name in emergency_models:
             for slot, api_key in keys.items():
                 try:
-                    genai.configure(api_key=api_key)
+                    genai.configure(api_key=api_key, transport="rest")
                     model = genai.GenerativeModel(
                         em_name,
                         generation_config=genai.types.GenerationConfig(
@@ -1070,7 +1070,11 @@ Quality Rules:
         Phase 3: AI fills only the checks that require AI judgment (content quality, CWV estimates, etc.)
         Phase 4: Python-computed checks always override AI answers for 100% accuracy
         """
-        # ── Phase 1: Extract real data ────────────────────────────────────
+        # ── Phase 1: Extract real data + Crawl concurrently if deep/paranoid ──
+        crawl_task = None
+        if depth in ("deep", "paranoid"):
+            crawl_task = asyncio.create_task(crawl_website(url, depth))
+
         try:
             ex = await extract_seo_data(url, depth)
         except Exception as e:
@@ -1735,7 +1739,7 @@ Quality Rules:
 - Sitemaps checked: {[(s.get('url'), s.get('status_code'), s.get('url_count')) for s in sitemaps]}
 - Security headers: {hdr_summary}"""
 
-        # ── Phase 3: AI fills only FILL_IN checks ─────────────────────────
+        # ── Phase 3: AI fills summary & high-level insights ──────────────
         prompt = f"""You are an Enterprise Technical SEO Expert performing a real-data-backed audit.
 
 Target Website: {url}
@@ -1743,69 +1747,38 @@ Scan Depth: {depth}
 
 {crawl_context}
 
-TASK: The JSON skeleton below has some checks already filled in (do NOT change them) and checks marked "FILL_IN" that you MUST complete.
-
-For each "FILL_IN" entry:
-- "status": exactly "Pass" or "Fail"
-- "severity": "N/A" if Pass; else "Critical", "High", "Medium", or "Low"
-- "description": 1-2 sentences based on the REAL DATA above. Do not invent values.
-- "recommendation": concrete fix if Fail; "No action needed." if Pass
-
-CRITICAL RULES:
-1. Do NOT change entries that are NOT "FILL_IN" — copy them exactly.
-2. Every entry MUST remain in the output — do not remove any.
-3. Use the REAL EXTRACTION DATA above when deciding status — do not guess.
-4. OUTPUT ONLY valid JSON. No markdown, no backticks, no explanation.
-
-Return the complete structure:
+Return a valid JSON object with the executive summary and recommendations based on the REAL data:
 {{
   "executive_summary": {{
-    "overall_health_score": <0-100 based on real data>,
-    "technical_seo_score": <0-100>,
-    "on_page_seo_score": <0-100>,
-    "url_structure_score": <0-100>,
-    "internal_linking_score": <0-100>,
-    "image_seo_score": <0-100>,
-    "performance_score": <0-100>,
-    "core_web_vitals_score": <0-100>,
-    "mobile_seo_score": <0-100>,
-    "accessibility_score": <0-100>,
-    "schema_quality_score": <0-100>,
-    "security_headers_score": <0-100>,
-    "csp_security_score": <0-100>,
-    "https_security_score": <0-100>,
-    "content_quality_score": <0-100>,
-    "top_critical_issues": [],
-    "top_high_priority_issues": [],
-    "top_quick_wins": [],
-    "positive_findings": [],
-    "risks": [],
+    "overall_health_score": <int 0-100 based on real data>,
+    "technical_seo_score": <int 0-100>,
+    "on_page_seo_score": <int 0-100>,
+    "url_structure_score": <int 0-100>,
+    "internal_linking_score": <int 0-100>,
+    "image_seo_score": <int 0-100>,
+    "performance_score": <int 0-100>,
+    "core_web_vitals_score": <int 0-100>,
+    "mobile_seo_score": <int 0-100>,
+    "accessibility_score": <int 0-100>,
+    "schema_quality_score": <int 0-100>,
+    "security_headers_score": <int 0-100>,
+    "csp_security_score": <int 0-100>,
+    "https_security_score": <int 0-100>,
+    "content_quality_score": <int 0-100>,
+    "top_critical_issues": ["<concrete critical issue 1>", "<concrete critical issue 2>", "<concrete critical issue 3>"],
+    "top_high_priority_issues": ["<concrete high priority issue 1>", "<concrete high priority issue 2>"],
+    "top_quick_wins": ["<concrete quick win 1>", "<concrete quick win 2>", "<concrete quick win 3>"],
+    "positive_findings": ["<positive finding 1>", "<positive finding 2>"],
+    "risks": ["<risk 1>", "<risk 2>"],
     "recommended_roadmap": {{"immediate": [], "short_term": [], "long_term": []}}
   }},
-  "technical_seo": {{"findings": <from skeleton>}},
-  "on_page_seo": {{"findings": <from skeleton>}},
-  "url_audit": {{"findings": <from skeleton>}},
-  "internal_external_links": {{"findings": <from skeleton>}},
-  "image_seo": {{"findings": <from skeleton>}},
-  "performance": {{"findings": <from skeleton>}},
-  "mobile_seo": {{"findings": <from skeleton>}},
-  "accessibility": {{"findings": <from skeleton>}},
-  "structured_data": {{"findings": <from skeleton>}},
-  "javascript_seo": {{"findings": <from skeleton>}},
-  "robots_sitemap": {{"findings": <from skeleton>}},
-  "csp_audit": {{"findings": <from skeleton>}},
-  "security_headers": {{"findings": <from skeleton>}},
-  "https_mixed_content": {{"findings": <from skeleton>}},
-  "content_quality": {{"findings": <from skeleton>}},
-  "actionable_recommendations": [],
-  "pages_scanned": []
+  "actionable_recommendations": []
 }}
 
-SKELETON:
-{skeleton_str}"""
+OUTPUT ONLY valid JSON. No markdown, no backticks, no explanation."""
 
         try:
-            text, mname = await asyncio.to_thread(self._try, prompt, None, "pro")
+            text, mname = await asyncio.to_thread(self._try, prompt, None, "flash")
             data = _parse(text)
             if not isinstance(data, dict):
                 data = {}
@@ -2023,9 +1996,9 @@ SKELETON:
                 )[:6],
             }
         ]
-        if depth in ("deep", "paranoid"):
+        if crawl_task:
             try:
-                crawled_pages = await crawl_website(url, depth)
+                crawled_pages = await asyncio.wait_for(crawl_task, timeout=12.0)
                 if crawled_pages and len(crawled_pages) > 1:
                     scanned_list = [
                         {

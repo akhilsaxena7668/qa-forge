@@ -29,7 +29,7 @@ class AsyncCrawler:
         self.visited.add(url)
         print(f"[Crawler] Fetching ({len(self.visited)}/{self.max_pages}): {url}")
         try:
-            resp = await client.get(url, timeout=8.0, follow_redirects=True)
+            resp = await client.get(url, timeout=4.0, follow_redirects=True)
             html = resp.text
 
             # Extract title
@@ -100,10 +100,14 @@ class AsyncCrawler:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
         }
+        start_time = asyncio.get_event_loop().time()
         async with httpx.AsyncClient(verify=False, headers=headers) as client:
             while self.to_visit and len(self.visited) < self.max_pages:
-                # Batch size: 5 for deep/paranoid, 1 for standard
-                batch_size = 5 if self.max_pages > 1 else 1
+                if asyncio.get_event_loop().time() - start_time > 10.0:
+                    print(f"[Crawler] Time cap reached ({len(self.visited)} pages crawled)")
+                    break
+                # Batch size: 10 for deep/paranoid, 1 for standard
+                batch_size = 10 if self.max_pages > 1 else 1
                 batch = self.to_visit[:batch_size]
                 self.to_visit = self.to_visit[batch_size:]
                 tasks = [self.fetch(client, u) for u in batch]
