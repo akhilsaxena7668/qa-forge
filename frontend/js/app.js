@@ -2689,7 +2689,7 @@ function renderAeoGeoResults(data) {
         ${data.target_query ? `<div style="font-size:0.85rem; color:var(--ac); margin-top:2px;">🎯 Target Topic / Brand Focus: <strong>${_escapeHtml(data.target_query)}</strong></div>` : ''}
       </div>
       <div style="text-align:right;">
-        <span class="badge sev-low" style="font-size:0.75rem; font-family:var(--fm);">${_escapeHtml(data.model_used || 'Gemini 2.5 Flash')}</span>
+        <span class="badge sev-low" style="font-size:0.75rem; font-family:var(--fm);">${_escapeHtml(data.model_used || 'Gemini 3.5 Flash Lite')}</span>
         <div style="font-size:0.72rem; color:var(--t3); margin-top:3px;">${new Date(data.scanned_at || Date.now()).toLocaleTimeString()}</div>
       </div>
     </div>
