@@ -1652,12 +1652,54 @@ function downloadBugReport() {
   toast('Bug report downloaded as JSON', 'ok');
 }
 
-// ══════════ SEO AUDIT ══════════
-// ══════════ SEO AUDIT ══════════
+// ══════════ SEO, AEO & GEO AUDIT ══════════
 window.activeSeoScan = null;
 window.lastSeoAuditResult = null;
+window.activeAeoScan = null;
+window.lastAeoAuditResult = null;
+
+function switchSeoSubtab(subtab) {
+  const btnSeo = document.getElementById('subtabSeo');
+  const btnAeo = document.getElementById('subtabAeoGeo');
+  const pnlSeo = document.getElementById('seoSectionPanel');
+  const pnlAeo = document.getElementById('aeoSectionPanel');
+
+  const seoUrl = document.getElementById('seoUrlInput');
+  const aeoUrl = document.getElementById('aeoUrlInput');
+
+  if (subtab === 'aeo_geo') {
+    if (btnSeo) btnSeo.classList.remove('active');
+    if (btnAeo) btnAeo.classList.add('active');
+    if (pnlSeo) pnlSeo.classList.add('hidden');
+    if (pnlAeo) pnlAeo.classList.remove('hidden');
+
+    if (seoUrl && aeoUrl && !aeoUrl.value && seoUrl.value) {
+      aeoUrl.value = seoUrl.value;
+    }
+    initAeoGeoAudit();
+  } else {
+    if (btnAeo) btnAeo.classList.remove('active');
+    if (btnSeo) btnSeo.classList.add('active');
+    if (pnlAeo) pnlAeo.classList.add('hidden');
+    if (pnlSeo) pnlSeo.classList.remove('hidden');
+
+    if (seoUrl && aeoUrl && !seoUrl.value && aeoUrl.value) {
+      seoUrl.value = aeoUrl.value;
+    }
+    initSeoAuditInternal();
+  }
+}
 
 function initSeoAudit() {
+  const aeoPanel = document.getElementById('aeoSectionPanel');
+  if (aeoPanel && !aeoPanel.classList.contains('hidden')) {
+    initAeoGeoAudit();
+    return;
+  }
+  initSeoAuditInternal();
+}
+
+function initSeoAuditInternal() {
   const savedActive = window.activeSeoScan || JSON.parse(sessionStorage.getItem('qaforge_active_seo') || 'null');
   const btn = document.getElementById('seoRunBtn');
   const load = document.getElementById('seoLoad');
@@ -1693,6 +1735,118 @@ function initSeoAudit() {
         }
       } catch (_) {}
     }
+  }
+}
+
+function initAeoGeoAudit() {
+  const out = document.getElementById('aeoResults');
+  const pdfBtn = document.getElementById('aeoPdfBtn');
+  const load = document.getElementById('aeoLoad');
+  const btn = document.getElementById('aeoRunBtn');
+
+  if (window.activeAeoScan) {
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ AUDITING AI SIGNALS…'; }
+    if (load) load.classList.remove('hidden');
+    if (out) out.classList.add('hidden');
+    if (pdfBtn) pdfBtn.classList.add('hidden');
+  } else if (window.lastAeoAuditResult) {
+    if (out && (!out.innerHTML.trim() || out.classList.contains('hidden'))) {
+      renderAeoGeoResults(window.lastAeoAuditResult);
+      out.classList.remove('hidden');
+      if (pdfBtn) pdfBtn.classList.remove('hidden');
+      if (load) load.classList.add('hidden');
+    }
+  } else {
+    const cached = sessionStorage.getItem('qaforge_last_aeo_res');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        window.lastAeoAuditResult = parsed;
+        if (out && (!out.innerHTML.trim() || out.classList.contains('hidden'))) {
+          renderAeoGeoResults(parsed);
+          out.classList.remove('hidden');
+          if (pdfBtn) pdfBtn.classList.remove('hidden');
+          if (load) load.classList.add('hidden');
+        }
+      } catch (_) {}
+    }
+  }
+}
+
+async function runAeoGeoAudit() {
+  let url = document.getElementById('aeoUrlInput').value.trim();
+  const query = document.getElementById('aeoQueryInput').value.trim();
+  if (!url) return alert('Please enter a website URL');
+
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url;
+    document.getElementById('aeoUrlInput').value = url;
+  }
+
+  const btn = document.getElementById('aeoRunBtn');
+  const load = document.getElementById('aeoLoad');
+  const out = document.getElementById('aeoResults');
+  const pdfBtn = document.getElementById('aeoPdfBtn');
+
+  // Clear any stray overlays
+  document.querySelectorAll('.html2pdf__overlay').forEach(el => el.remove());
+
+  btn.disabled = true;
+  const origBtnText = 'RUN AEO & GEO SCAN';
+  btn.innerHTML = '⏳ AUDITING AI SIGNALS…';
+  load.classList.remove('hidden');
+  out.classList.add('hidden');
+  if (pdfBtn) pdfBtn.classList.add('hidden');
+
+  window.activeAeoScan = { url, query, startTime: Date.now() };
+
+  try {
+    let res = null;
+    try {
+      res = await post('/api/audit/aeo-geo', { url, target_query: query });
+    } catch (fetchErr) {
+      console.warn('[AEO/GEO] Direct connection interrupted, polling status...', fetchErr);
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise(r => setTimeout(r, 2500));
+        try {
+          const st = await fetch(`/api/audit/aeo-geo/status?url=${encodeURIComponent(url)}&target_query=${encodeURIComponent(query)}`).then(r => r.json());
+          if (st && st.status === 'completed' && st.result) {
+            res = st.result;
+            break;
+          } else if (st && st.status === 'failed') {
+            throw new Error(st.error || 'AEO/GEO scan failed on server');
+          }
+        } catch (pollErr) {
+          if (attempt > 35) throw pollErr;
+        }
+      }
+      if (!res) throw fetchErr;
+    }
+
+    if (!res || typeof res !== 'object') throw new Error('Server returned empty response');
+
+    window.lastAeoAuditResult = res;
+    try { sessionStorage.setItem('qaforge_last_aeo_res', JSON.stringify(res)); } catch (_) {}
+
+    renderAeoGeoResults(res);
+    out.classList.remove('hidden');
+    if (pdfBtn) pdfBtn.classList.remove('hidden');
+    toast(`✓ AEO & GEO scan for ${url} completed!`, 'ok');
+  } catch (e) {
+    console.error('[AEO/GEO] Scan error:', e);
+    out.innerHTML = `
+      <div class="empty-st" style="padding:2.5rem; text-align:center;">
+        <div style="font-size:1.3rem; margin-bottom:0.5rem; color:var(--cr);">⚠ Scan Interrupted</div>
+        <p style="color:var(--t2); margin-bottom:1.2rem;">${_escapeHtml(e.message || 'The AEO/GEO scan was disrupted.')}</p>
+        <button class="btn-primary" onclick="runAeoGeoAudit()">Retry AEO/GEO Scan</button>
+      </div>`;
+    out.classList.remove('hidden');
+    toast('AEO/GEO Audit error: ' + (e.message || 'Scan disrupted'), 'err');
+  } finally {
+    window.activeAeoScan = null;
+    btn.disabled = false;
+    btn.innerHTML = origBtnText;
+    load.classList.add('hidden');
   }
 }
 
@@ -2473,4 +2627,360 @@ async function downloadSeoPdf() {
     }
   }
 }
+
+// ══════════ AEO & GEO AUDIT RENDERING ══════════
+function renderAeoGeoResults(data) {
+  const out = document.getElementById('aeoResults');
+  if (!out) return;
+  if (!data || typeof data !== 'object') {
+    out.innerHTML = `
+      <div class="empty-st" style="padding:2.5rem; text-align:center;">
+        <div style="font-size:1.4rem; margin-bottom:0.5rem; color:var(--cr);">⚠ Scan Incomplete</div>
+        <p style="color:var(--t2); margin-bottom:1.2rem;">The server could not return AEO/GEO report data. Please check the URL and run the scan again.</p>
+        <button class="btn-primary" onclick="runAeoGeoAudit()">Run Scan Again</button>
+      </div>`;
+    return;
+  }
+
+  const scores = data.scores || {};
+  const overall = Number(scores.overall_ai_score) || 0;
+  const botAcc = Number(scores.bot_accessibility_score) || 0;
+  const dirAns = Number(scores.direct_answer_score) || 0;
+  const genCit = Number(scores.generative_citation_score) || 0;
+
+  const readiness = data.readiness || {};
+  const sig = data.raw_signals || {};
+  const bots = Array.isArray(sig.ai_bots) ? sig.ai_bots : Object.values(sig.ai_bots || {});
+  const fixes = data.actionable_fixes || [];
+  const queryOpps = data.query_opportunities || [];
+  const contentGaps = data.content_gaps || [];
+  const directAnswers = sig.direct_answers || [];
+  const statsList = sig.statistics_found || sig.facts_and_stats || [];
+  const schemas = sig.schemas || {};
+  const hasFaq = schemas.has_faq || sig.has_faq_schema || false;
+  const hasOrg = schemas.has_org || sig.has_org_schema || false;
+  const sameAsList = schemas.same_as || [];
+  const hasSameAs = (sameAsList && sameAsList.length > 0) || sig.has_same_as || false;
+
+  function scoreClass(val) {
+    return val >= 80 ? 'score-high' : val >= 50 ? 'score-med' : 'score-low';
+  }
+
+  function readinessValClass(val) {
+    const v = (val || '').toLowerCase();
+    if (v === 'high') return 'val-high';
+    if (v === 'low') return 'val-low';
+    return 'val-mod';
+  }
+
+  function botBadge(status) {
+    const s = (status || '').toLowerCase();
+    if (s === 'allowed') return '<span class="badge sev-low" style="background:#059669;color:#fff;font-weight:700">ALLOWED</span>';
+    if (s === 'blocked') return '<span class="badge sev-critical" style="background:#dc2626;color:#fff;font-weight:700">BLOCKED</span>';
+    return '<span class="badge" style="background:#2563eb;color:#fff;font-weight:700">DEFAULT ALLOWED</span>';
+  }
+
+  let html = `
+    <!-- Top Metadata Header -->
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:1.25rem; padding-bottom:0.75rem; border-bottom:1px solid var(--b);">
+      <div>
+        <div style="font-size:0.78rem; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">Audited URL for Generative & Answer Engine Optimization</div>
+        <div style="font-size:1.15rem; font-weight:700; color:var(--t); word-break:break-all;">${_escapeHtml(data.url)}</div>
+        ${data.target_query ? `<div style="font-size:0.85rem; color:var(--ac); margin-top:2px;">🎯 Target Topic / Brand Focus: <strong>${_escapeHtml(data.target_query)}</strong></div>` : ''}
+      </div>
+      <div style="text-align:right;">
+        <span class="badge sev-low" style="font-size:0.75rem; font-family:var(--fm);">${_escapeHtml(data.model_used || 'Gemini 2.5 Flash')}</span>
+        <div style="font-size:0.72rem; color:var(--t3); margin-top:3px;">${new Date(data.scanned_at || Date.now()).toLocaleTimeString()}</div>
+      </div>
+    </div>
+
+    <!-- Executive AI Scores -->
+    <div class="seo-exec-summary">
+      <div class="seo-score-card">
+        <h3>Overall AI Visibility</h3>
+        <div class="seo-score-val ${scoreClass(overall)}">${overall}</div>
+      </div>
+      <div class="seo-score-card">
+        <h3>AI Bot Access</h3>
+        <div class="seo-score-val ${scoreClass(botAcc)}">${botAcc}</div>
+      </div>
+      <div class="seo-score-card">
+        <h3>Direct Answer</h3>
+        <div class="seo-score-val ${scoreClass(dirAns)}">${dirAns}</div>
+      </div>
+      <div class="seo-score-card">
+        <h3>Generative Authority</h3>
+        <div class="seo-score-val ${scoreClass(genCit)}">${genCit}</div>
+      </div>
+    </div>
+
+    <!-- Engine Readiness Status Row -->
+    <div class="aeo-readiness-row">
+      <div class="aeo-readiness-badge">
+        <span class="aeo-readiness-label">Google AI Overviews</span>
+        <span class="aeo-readiness-val ${readinessValClass(readiness.ai_overviews)}">${_escapeHtml(readiness.ai_overviews || 'Moderate')}</span>
+      </div>
+      <div class="aeo-readiness-badge">
+        <span class="aeo-readiness-label">ChatGPT Search</span>
+        <span class="aeo-readiness-val ${readinessValClass(readiness.chatgpt_search)}">${_escapeHtml(readiness.chatgpt_search || 'Moderate')}</span>
+      </div>
+      <div class="aeo-readiness-badge">
+        <span class="aeo-readiness-label">Perplexity Citations</span>
+        <span class="aeo-readiness-val ${readinessValClass(readiness.perplexity)}">${_escapeHtml(readiness.perplexity || 'Moderate')}</span>
+      </div>
+      <div class="aeo-readiness-badge">
+        <span class="aeo-readiness-label">Voice / Siri / Alexa</span>
+        <span class="aeo-readiness-val ${readinessValClass(readiness.voice_search)}">${_escapeHtml(readiness.voice_search || 'Moderate')}</span>
+      </div>
+    </div>
+
+    <!-- Simulated AI Overview & Synthesis -->
+    <div class="aeo-snippet-card">
+      <div class="aeo-snippet-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
+        <span>Simulated Generative AI Overview & Citation Snippet</span>
+      </div>
+      <div class="aeo-snippet-body">
+        ${_escapeHtml(data.simulated_ai_snippet || 'No simulated snippet available.')}
+      </div>
+      <div style="font-size:0.72rem; color:var(--t3); margin-top:0.6rem; font-style:italic;">
+        Simulated output showing how leading LLMs (Google Gemini Search, Perplexity, and ChatGPT Search) summarize and cite this page based on parsed entity data, headings, and direct answer blocks.
+      </div>
+    </div>
+
+    <!-- AI Conversational Query Opportunities & Gaps -->
+    <div class="seo-lists" style="margin-bottom:1.5rem">
+      <div class="seo-list-card">
+        <h3>🎯 Winnable Conversational Queries (AEO Opportunities)</h3>
+        <ul style="padding-left:1.2rem; margin-top:0.5rem;">
+          ${queryOpps.length > 0 ? queryOpps.map(q => `<li style="margin-bottom:0.4rem; color:var(--t)"><strong>${_escapeHtml(q)}</strong></li>`).join('') : '<li style="color:var(--t3)">No conversational query suggestions identified.</li>'}
+        </ul>
+      </div>
+      <div class="seo-list-card">
+        <h3>⚠ Content & Authority Gaps for Generative Engines</h3>
+        <ul style="padding-left:1.2rem; margin-top:0.5rem;">
+          ${contentGaps.length > 0 ? contentGaps.map(g => `<li style="margin-bottom:0.4rem; color:var(--t2)">${_escapeHtml(g)}</li>`).join('') : '<li style="color:var(--t3)">No critical generative gaps found.</li>'}
+        </ul>
+      </div>
+    </div>
+
+    <!-- AI Crawlers in robots.txt -->
+    <div class="seo-phase" style="margin-bottom:1.5rem">
+      <div class="seo-phase-hdr" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>🤖 AI Crawler Permissions (robots.txt Deep Verification)</span>
+        <span style="font-size:0.8rem; font-weight:600; color:var(--ac);">${sig.ai_bots_summary ? `${sig.ai_bots_summary.allowed} of ${sig.ai_bots_summary.total} Allowed` : ''}</span>
+      </div>
+      <div class="seo-phase-body">
+        <p style="font-size:0.82rem; color:var(--t2); margin-bottom:1rem;">
+          Generative AI models and autonomous search agents rely on their dedicated crawlers to index and synthesize your site in real-time answers.
+        </p>
+        <div class="aeo-bots-grid">
+          ${bots.map(b => `
+            <div class="aeo-bot-card">
+              <div class="aeo-bot-head">
+                <div>
+                  <div class="aeo-bot-name">${_escapeHtml(b.name)}</div>
+                  <div class="aeo-bot-company">${_escapeHtml(b.company)}</div>
+                </div>
+                <div>${botBadge(b.status)}</div>
+              </div>
+              <div class="aeo-bot-purpose">${_escapeHtml(b.purpose)}</div>
+              <div class="aeo-bot-rule">Rule: ${_escapeHtml(b.rule || 'None declared')}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Direct Answer Candidate Blocks & Structured Signals -->
+    <div class="seo-phase" style="margin-bottom:1.5rem">
+      <div class="seo-phase-hdr">
+        <span>⚡ Direct Answer Extraction & Fact Density Signals</span>
+      </div>
+      <div class="seo-phase-body">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.75rem; margin-bottom:1rem;">
+          <div style="background:var(--bg2); border:1px solid var(--b); border-radius:6px; padding:0.75rem;">
+            <div style="font-size:0.72rem; color:var(--t3); text-transform:uppercase;">FAQ Schema</div>
+            <div style="font-size:1.1rem; font-weight:700; color:${hasFaq ? 'var(--ac2)' : 'var(--cr)'}">${hasFaq ? '✓ Detected' : '✗ Missing'}</div>
+          </div>
+          <div style="background:var(--bg2); border:1px solid var(--b); border-radius:6px; padding:0.75rem;">
+            <div style="font-size:0.72rem; color:var(--t3); text-transform:uppercase;">Organization / Entity Schema</div>
+            <div style="font-size:1.1rem; font-weight:700; color:${hasOrg ? 'var(--ac2)' : 'var(--hi)'}">${hasOrg ? '✓ Detected' : '⚠ Missing'}</div>
+          </div>
+          <div style="background:var(--bg2); border:1px solid var(--b); border-radius:6px; padding:0.75rem;">
+            <div style="font-size:0.72rem; color:var(--t3); text-transform:uppercase;">sameAs Entity Links (Wikidata/Social)</div>
+            <div style="font-size:1.1rem; font-weight:700; color:${hasSameAs ? 'var(--ac2)' : 'var(--t3)'}">${hasSameAs ? `✓ ${sameAsList.length || 1} Linked` : 'None'}</div>
+          </div>
+          <div style="background:var(--bg2); border:1px solid var(--b); border-radius:6px; padding:0.75rem;">
+            <div style="font-size:0.72rem; color:var(--t3); text-transform:uppercase;">Empirical Facts & Numbers</div>
+            <div style="font-size:1.1rem; font-weight:700; color:var(--ac)">${statsList.length} extracted</div>
+          </div>
+        </div>
+
+        <h4 style="font-size:0.85rem; font-weight:700; margin-bottom:0.6rem; color:var(--t)">Extracted Direct Answer Blocks (40–75 words)</h4>
+        ${directAnswers.length > 0 ? `
+          <div class="aeo-answers-list">
+            ${directAnswers.slice(0, 5).map(da => `
+              <div class="aeo-answer-item">
+                <div class="aeo-answer-heading">${_escapeHtml(da.heading || 'Direct Content Block')}</div>
+                <div class="aeo-answer-text">${_escapeHtml(da.text)}</div>
+                <div class="aeo-answer-meta">${da.word_count} words · Optimal length for Google AI Overviews and Voice Readout</div>
+              </div>
+            `).join('')}
+          </div>
+        ` : `
+          <div style="font-size:0.82rem; color:var(--t3); padding:0.75rem; background:var(--bg2); border-radius:6px;">
+            No direct answer paragraph blocks (40–70 words under clear H2/H3 question headings) were identified on this page. Adding concise answer summaries immediately after headings will dramatically improve AI citation rates.
+          </div>
+        `}
+      </div>
+    </div>
+
+    <!-- Actionable Priorities -->
+    <div class="seo-phase" style="margin-bottom:1.5rem">
+      <div class="seo-phase-hdr">
+        <span>🚀 Prioritized Fixes for Generative & Answer Optimization</span>
+      </div>
+      <div class="seo-phase-body">
+        <div style="display:flex; flex-direction:column; gap:0.75rem;">
+          ${fixes.map(f => `
+            <div style="background:var(--bg2); border:1px solid var(--b); border-radius:8px; padding:0.9rem;">
+              <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+                <span class="badge ${f.priority && f.priority.toLowerCase() === 'high' ? 'sev-critical' : 'sev-medium'}" style="font-size:0.7rem; padding:2px 6px;">${_escapeHtml(f.priority || 'MEDIUM')}</span>
+                <span style="font-size:0.75rem; color:var(--t3); font-weight:600;">[${_escapeHtml(f.category || 'General')}]</span>
+                <strong style="font-size:0.9rem; color:var(--t);">${_escapeHtml(f.title)}</strong>
+              </div>
+              <div style="font-size:0.82rem; color:var(--t2); line-height:1.5;">${_escapeHtml(f.recommendation)}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Recommended Schema.org JSON-LD -->
+    ${data.recommended_schema_snippet ? `
+      <div class="seo-phase">
+        <div class="seo-phase-hdr" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>📋 Recommended Structured Data (Copy-Ready JSON-LD)</span>
+          <button class="btn-ghost" style="padding:4px 10px; font-size:0.75rem;" onclick="copyAeoSchema()">📋 COPY SCHEMA</button>
+        </div>
+        <div class="seo-phase-body">
+          <p style="font-size:0.82rem; color:var(--t2); margin-bottom:0.75rem;">
+            Embed this customized Schema.org JSON-LD inside your <code>&lt;head&gt;</code> tag to give AI bots clear semantic facts, FAQ answers, and entity relationships.
+          </p>
+          <pre id="aeoSchemaCode" class="aeo-code-block">${_escapeHtml(data.recommended_schema_snippet)}</pre>
+        </div>
+      </div>
+    ` : ''}
+  `;
+
+  out.innerHTML = html;
+}
+
+function copyAeoSchema() {
+  const codeEl = document.getElementById('aeoSchemaCode');
+  if (!codeEl) return;
+  const text = codeEl.innerText || codeEl.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    if (typeof toast === 'function') toast('✓ Schema JSON-LD copied to clipboard!', 'ok');
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    if (typeof toast === 'function') toast('✓ Schema JSON-LD copied to clipboard!', 'ok');
+  });
+}
+
+async function downloadAeoPdf() {
+  const element = document.getElementById('aeoResults');
+  if (!element || element.classList.contains('hidden')) return;
+
+  const btn = document.getElementById('aeoPdfBtn');
+  const origText = btn ? btn.innerHTML : '⬇ DOWNLOAD REPORT';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Generating PDF…';
+  }
+
+  document.querySelectorAll('.html2pdf__overlay').forEach(el => el.remove());
+
+  try {
+    await ensurePdfLibraries();
+    const jsPdfConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!jsPdfConstructor || !window.html2canvas) {
+      throw new Error('PDF export libraries failed to initialize.');
+    }
+
+    const bgColor = window.getComputedStyle(element).backgroundColor || '#0b0f19';
+
+    const canvas = await window.html2canvas(element, {
+      scale: 1.5,
+      useCORS: true,
+      logging: false,
+      backgroundColor: bgColor
+    });
+
+    if (!canvas || canvas.width === 0 || canvas.height === 0) {
+      throw new Error('Unable to render report canvas.');
+    }
+
+    const pdf = new jsPdfConstructor('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const contentWidth = pageWidth - (margin * 2);
+    const contentHeight = pageHeight - (margin * 2);
+
+    const pxPerMm = canvas.width / contentWidth;
+    const sliceHeightPx = Math.floor(contentHeight * pxPerMm);
+
+    let currentY = 0;
+    let pageIndex = 0;
+
+    while (currentY < canvas.height) {
+      if (pageIndex > 0) pdf.addPage();
+
+      const remainingHeight = canvas.height - currentY;
+      const thisSliceHeightPx = Math.min(sliceHeightPx, remainingHeight);
+      const thisSliceHeightMm = thisSliceHeightPx / pxPerMm;
+
+      const sliceCanvas = document.createElement('canvas');
+      sliceCanvas.width = canvas.width;
+      sliceCanvas.height = thisSliceHeightPx;
+      const sCtx = sliceCanvas.getContext('2d');
+
+      sCtx.fillStyle = bgColor;
+      sCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+
+      sCtx.drawImage(
+        canvas,
+        0, currentY, canvas.width, thisSliceHeightPx,
+        0, 0, canvas.width, thisSliceHeightPx
+      );
+
+      const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.95);
+      pdf.addImage(sliceData, 'JPEG', margin, margin, contentWidth, thisSliceHeightMm);
+
+      currentY += thisSliceHeightPx;
+      pageIndex++;
+    }
+
+    const filename = `QAForge_AEO_GEO_Audit_${new Date().toISOString().slice(0, 10)}.pdf`;
+    pdf.save(filename);
+    if (typeof toast === 'function') toast('✓ AEO/GEO PDF report downloaded!', 'ok');
+  } catch (err) {
+    console.error('[AEO PDF] Export failed:', err);
+    alert('Failed to generate PDF: ' + (err.message || 'Unknown error'));
+  } finally {
+    document.querySelectorAll('.html2pdf__overlay').forEach(e => e.remove());
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
+}
+
 

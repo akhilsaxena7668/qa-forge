@@ -5,6 +5,7 @@ QAForge is a comprehensive testing platform designed to streamline quality assur
 
 - `backend/`: API services and AI backend
   - `__init__.py` - [New File]
+  - `aeo_geo_engine.py` - [New File]
   - `ai_engine.py` - Gemini AI integration (4 specialized models, prompt engineering)
   - `brain_watcher.py` - [New File]
   - `crawler.py` - [New File]

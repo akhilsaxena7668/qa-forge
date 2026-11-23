@@ -26,7 +26,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;600;700&family=DM+Mono:wght@400;500&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="css/app.css?v=9" />
+  <link rel="stylesheet" href="css/app.css?v=10" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -875,11 +875,21 @@
   <!-- ══════════ SEO AUDIT ══════════ -->
   <main id="p-seoaudit" class="page">
     <div class="pg-hdr">
-      <h2>🔍 SEO & SECURITY AUDIT</h2>
-      <p>Perform an enterprise-grade deep scan of any website for SEO, Accessibility, Security, and Performance.</p>
+      <h2>🔍 SEO, AEO & SECURITY AUDIT</h2>
+      <p>Enterprise audit for Technical SEO, HTTP Security, and Generative Engine Optimization (AEO/GEO for ChatGPT, Perplexity & AI Overviews).</p>
     </div>
 
-    <div class="seo-audit-container">
+    <div class="audit-subtabs" data-html2canvas-ignore="true">
+      <button class="subtab-btn active" id="subtabSeo" onclick="switchSeoSubtab('seo')">
+        <span>🌐</span> Technical SEO & Security Audit
+      </button>
+      <button class="subtab-btn" id="subtabAeoGeo" onclick="switchSeoSubtab('aeo_geo')">
+        <span>🤖</span> AEO & GEO (AI Search Engine Optimization)
+      </button>
+    </div>
+
+    <!-- SEO & Security Section -->
+    <div id="seoSectionPanel" class="seo-audit-container">
       <div class="seo-input-row" data-html2canvas-ignore="true">
         <input type="url" id="seoUrlInput" class="fi" placeholder="https://example.com" onkeydown="if(event.key==='Enter') runSeoAudit()" />
         <select id="seoDepthSelect" class="fi" style="width: auto;">
@@ -898,7 +908,7 @@
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
           </svg></div>
         <div class="load-title">Auditing Website…</div>
-        <div class="load-sub">Performing deep 19-phase analysis. This may take 20-40 seconds.</div>
+        <div class="load-sub">Performing deep 19-phase analysis. This may take 5-15 seconds.</div>
         <div class="load-bar">
           <div class="load-fill" style="background:var(--a)"></div>
         </div>
@@ -906,6 +916,35 @@
 
       <!-- Output Container -->
       <div id="seoResults" class="hidden seo-results">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+    <!-- AEO & GEO Section -->
+    <div id="aeoSectionPanel" class="seo-audit-container hidden">
+      <div class="aeo-input-row" data-html2canvas-ignore="true">
+        <input type="url" id="aeoUrlInput" class="fi" style="flex: 1.5; min-width: 260px;" placeholder="https://example.com" onkeydown="if(event.key==='Enter') runAeoGeoAudit()" />
+        <input type="text" id="aeoQueryInput" class="fi" style="flex: 1.2; min-width: 220px;" placeholder="Target Query / Brand / Topic Focus (optional)" onkeydown="if(event.key==='Enter') runAeoGeoAudit()" />
+        <button class="btn-primary" id="aeoRunBtn" onclick="runAeoGeoAudit()">RUN AEO & GEO SCAN</button>
+        <button class="btn-ghost hidden" id="aeoPdfBtn" onclick="downloadAeoPdf()">⬇ DOWNLOAD REPORT</button>
+      </div>
+
+      <!-- Loading State -->
+      <div id="aeoLoad" class="load-st hidden" style="margin-top:2rem" data-html2canvas-ignore="true">
+        <div class="load-hex" style="color:var(--ac)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 6v6l4 2" />
+          </svg></div>
+        <div class="load-title">Analyzing AEO & Generative Search Readiness…</div>
+        <div class="load-sub">Evaluating robots.txt AI bots, direct answer candidates, schema & knowledge graph signals.</div>
+        <div class="load-bar">
+          <div class="load-fill" style="background:var(--ac)"></div>
+        </div>
+      </div>
+
+      <!-- Output Container -->
+      <div id="aeoResults" class="hidden aeo-results">
         <!-- Rendered by JS -->
       </div>
     </div>
@@ -1696,7 +1735,7 @@ python run.py
 
   <script src="js/perf-tester.js?v=1"></script>
   <script src="js/api-tester.js?v=3"></script>
-  <script src="js/app.js?v=13"></script>
+  <script src="js/app.js?v=15"></script>
   <script>
     const appMenuToggle = document.getElementById('appMenuToggle');
     const ntabs = document.querySelector('.ntabs');

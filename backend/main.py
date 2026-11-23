@@ -25,7 +25,8 @@ _load_env()
 from .ai_engine import AIEngine, MODEL_LABELS, MODEL_CHAIN
 from .test_executor import TestExecutor
 from .report_gen import ReportGenerator
-from .models import GenerateRequest, ExecuteRequest, BugScanRequest, AppConfig, RangeConfig, ProxyRequest, ApiGenerateRequest, BugFormatRequest, SeoAuditRequest
+from .models import GenerateRequest, ExecuteRequest, BugScanRequest, AppConfig, RangeConfig, ProxyRequest, ApiGenerateRequest, BugFormatRequest, SeoAuditRequest, AeoGeoAuditRequest
+from .aeo_geo_engine import audit_aeo_geo
 
 
 app = FastAPI(title="QAForge Gemini API", version="4.0.0")
@@ -348,6 +349,90 @@ async def list_seo_audits():
 @app.get("/api/audit/seo/{sid}")
 async def get_seo_audit(sid: str):
     return _404(store["seo_audits"], sid, "SEO Audit")
+
+# ── AEO & GEO Audit ────────────────────────────────────────────────────────────
+@app.post("/api/audit/aeo-geo")
+async def aeo_geo_audit_endpoint(req: AeoGeoAuditRequest):
+    clean_url = req.url.strip()
+    key = f"aeo_{clean_url}_{req.target_query or ''}"
+
+    if key in store.get("active_aeo_tasks", {}):
+        task = store["active_aeo_tasks"][key]
+        try:
+            return await task
+        except Exception:
+            pass
+
+    async def _execute():
+        res = await audit_aeo_geo(clean_url, req.target_query, ai_engine=ai)
+        if "aeo_audits" not in store:
+            store["aeo_audits"] = {}
+        store["aeo_audits"][res["scan_id"]] = res
+        store["latest_aeo_audit"] = res
+        return res
+
+    scan_task = asyncio.create_task(_execute())
+    if "active_aeo_tasks" not in store:
+        store["active_aeo_tasks"] = {}
+    if "active_aeo_scans" not in store:
+        store["active_aeo_scans"] = {}
+
+    store["active_aeo_tasks"][key] = scan_task
+    store["active_aeo_scans"][key] = {
+        "url": clean_url,
+        "target_query": req.target_query,
+        "status": "running",
+        "started_at": datetime.now().isoformat(),
+        "scan_id": None,
+    }
+
+    try:
+        result = await scan_task
+        store["active_aeo_scans"][key]["status"] = "completed"
+        store["active_aeo_scans"][key]["scan_id"] = result.get("scan_id")
+        store["active_aeo_scans"][key]["result"] = result
+        return result
+    except Exception as e:
+        store["active_aeo_scans"][key]["status"] = "failed"
+        store["active_aeo_scans"][key]["error"] = str(e)
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"AEO/GEO Audit failed: {e}")
+    finally:
+        store["active_aeo_tasks"].pop(key, None)
+
+@app.get("/api/audit/aeo-geo/status")
+async def aeo_geo_status_endpoint(url: Optional[str] = None, target_query: Optional[str] = None):
+    if url:
+        key = f"aeo_{url.strip()}_{target_query or ''}"
+        if key in store.get("active_aeo_scans", {}):
+            return store["active_aeo_scans"][key]
+        for sid, aud in reversed(list(store.get("aeo_audits", {}).items())):
+            if aud.get("url") == url.strip():
+                return {"status": "completed", "result": aud, "scan_id": sid}
+
+    active = [s for s in store.get("active_aeo_scans", {}).values() if s.get("status") == "running"]
+    return {
+        "status": "running" if active else "idle",
+        "active_scans": active,
+        "latest": store.get("latest_aeo_audit")
+    }
+
+@app.get("/api/audit/aeo-geo/latest")
+async def get_latest_aeo_geo_audit_endpoint():
+    if store.get("latest_aeo_audit"):
+        return store["latest_aeo_audit"]
+    audits = list(store.get("aeo_audits", {}).values())
+    if audits:
+        return audits[-1]
+    return {"status": "none"}
+
+@app.get("/api/audit/aeo-geo/{sid}")
+async def get_single_aeo_geo_audit_endpoint(sid: str):
+    if "aeo_audits" not in store:
+        store["aeo_audits"] = {}
+    return _404(store["aeo_audits"], sid, "AEO/GEO Audit")
+
 
 # ── Suites ─────────────────────────────────────────────────────────────────────
 @app.get("/api/suites")

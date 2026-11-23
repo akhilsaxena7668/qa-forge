@@ -6411,3 +6411,174 @@ em.seo-empty { color: var(--hi); font-style: italic; font-size: 0.82rem; }
   min-width: 220px;
   flex: 1;
 }
+
+/* ══ AEO & GEO AUDIT STYLES ══ */
+.audit-subtabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--b);
+  padding-bottom: 0.65rem;
+}
+.subtab-btn {
+  background: var(--bg2);
+  border: 1px solid var(--b);
+  color: var(--t2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.subtab-btn:hover {
+  color: var(--t);
+  border-color: var(--b2);
+}
+.subtab-btn.active {
+  background: color-mix(in srgb, var(--ac) 15%, var(--bg2));
+  color: var(--ac);
+  border-color: var(--ac);
+}
+
+.aeo-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.aeo-readiness-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+}
+.aeo-readiness-badge {
+  background: var(--bg2);
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.aeo-readiness-label {
+  font-size: 0.72rem;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.aeo-readiness-val {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.aeo-readiness-val.val-high { color: var(--ac2); }
+.aeo-readiness-val.val-mod  { color: var(--hi); }
+.aeo-readiness-val.val-low  { color: var(--cr); }
+
+.aeo-snippet-card {
+  background: color-mix(in srgb, var(--ac) 6%, var(--bg2));
+  border: 1px solid color-mix(in srgb, var(--ac) 28%, var(--b));
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.aeo-snippet-header {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ac);
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.aeo-snippet-body {
+  font-size: 0.92rem;
+  color: var(--t);
+  line-height: 1.6;
+}
+
+.aeo-bots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+.aeo-bot-card {
+  background: var(--bg2);
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.aeo-bot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.aeo-bot-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--t);
+}
+.aeo-bot-company {
+  font-size: 0.72rem;
+  color: var(--t3);
+}
+.aeo-bot-purpose {
+  font-size: 0.78rem;
+  color: var(--t2);
+}
+.aeo-bot-rule {
+  font-size: 0.72rem;
+  font-family: var(--fm);
+  color: var(--t3);
+  margin-top: 0.25rem;
+}
+
+.aeo-answers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.aeo-answer-item {
+  background: var(--bg2);
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+.aeo-answer-heading {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--ac);
+  margin-bottom: 0.35rem;
+}
+.aeo-answer-text {
+  font-size: 0.82rem;
+  color: var(--t);
+  line-height: 1.5;
+}
+.aeo-answer-meta {
+  font-size: 0.7rem;
+  color: var(--t3);
+  margin-top: 0.35rem;
+}
+
+.aeo-code-block {
+  background: var(--bg);
+  border: 1px solid var(--b);
+  border-radius: 6px;
+  padding: 1rem;
+  font-family: var(--fm);
+  font-size: 0.78rem;
+  color: var(--t);
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+

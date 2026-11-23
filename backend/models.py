@@ -129,3 +129,10 @@ class SeoAuditRequest(BaseModel):
     url: str
     depth: Optional[str] = "standard"
 
+
+class AeoGeoAuditRequest(BaseModel):
+    url: str
+    target_query: Optional[str] = None
+    depth: Optional[str] = "standard"
+
+
