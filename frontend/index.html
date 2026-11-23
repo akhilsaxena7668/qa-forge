@@ -1164,9 +1164,39 @@
       const grid = document.getElementById('blogGrid');
       const loader = document.getElementById('blogLoad');
       try {
-        const res = await fetch('/api/health'); // Check health first
-        const blogs = await fetch('/api/blogs').then(r => r.json());
-        if (!blogs || blogs.length === 0) throw new Error();
+        let blogs = [];
+        try {
+          const r = await fetch('/api/blogs');
+          if (r.ok) blogs = await r.json();
+        } catch (_) {}
+
+        if (!blogs || blogs.length === 0) {
+          blogs = [
+            {
+              id: "blog-001",
+              title: "Navigating the Frontier: Best Practices for AI Testing in Modern Software",
+              summary: "Artificial intelligence introduces non-deterministic behavior that traditional testing frameworks struggle to capture. Discover how modern QA teams are adapting their strategies to validate complex machine learning models effectively.",
+              category: "AI",
+              author: "Akhil Saxena"
+            },
+            {
+              id: "blog-002",
+              title: "Beyond the Basics: Scaling Automation Testing for Enterprise Agility",
+              summary: "Test automation is no longer just a nice-to-have, but the backbone of continuous delivery pipelines. Learn how to design scalable, self-healing test suites that reduce maintenance overhead and accelerate release cycles.",
+              category: "Automation",
+              author: "Akhil Saxena"
+            },
+            {
+              id: "blog-003",
+              title: "From Manual to Automated: How AI is Transforming the QA Workflow",
+              summary: "The integration of generative AI and intelligent recorders is revolutionizing how QA professionals transition legacy manual tests into robust automated suites. Explore how this synergy saves time and elevates the tester's strategic value.",
+              category: "Manual-AI",
+              author: "Akhil Saxena"
+            }
+          ];
+        }
+
+        try { sessionStorage.setItem('qaforge_blogs', JSON.stringify(blogs)); } catch (_) {}
 
         grid.innerHTML = blogs.map((b, i) => `
         <article class="blog-card reveal">
@@ -1180,9 +1210,9 @@
             <div class="blog-footer">
               <div class="author-info">
                 <div class="author-avatar-sm">
-                  <img src="assets/akhil.jpg" alt="Akhil Saxena" onerror="this.src='https://ui-avatars.com/api/?name=Akhil+Saxena&background=6366f1&color=fff'">
+                  <img src="assets/akhil.jpg" alt="${b.author || 'Akhil Saxena'}" onerror="this.src='https://ui-avatars.com/api/?name=Akhil+Saxena&background=6366f1&color=fff'">
                 </div>
-                <span>${b.author}</span>
+                <span>${b.author || 'Akhil Saxena'}</span>
               </div>
               <a href="blog.html?id=${b.id}" class="btn-read">
                 Explore Insight <i class="fas fa-arrow-right"></i>
@@ -1199,7 +1229,7 @@
           observer.observe(card);
         });
       } catch (e) {
-        grid.innerHTML = '<p style="text-align:center;color:var(--text-muted);width:100%">Blogs temporarily unavailable. Check back soon!</p>';
+        console.warn('Blog display fallback:', e);
       }
     }
     fetchBlogs();

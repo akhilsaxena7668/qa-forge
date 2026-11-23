@@ -206,67 +206,120 @@
   </main>
 
   <script>
+    const DEFAULT_BLOGS_CLIENT = [
+      {
+        id: "blog-001",
+        title: "Navigating the Frontier: Best Practices for AI Testing in Modern Software",
+        summary: "Artificial intelligence introduces non-deterministic behavior that traditional testing frameworks struggle to capture. Discover how modern QA teams are adapting their strategies to validate complex machine learning models effectively.",
+        content: "As software engineering increasingly relies on machine learning and artificial intelligence, the paradigm of quality assurance is undergoing a massive shift. Traditional testing relies heavily on deterministic inputs yielding expected outputs, but AI systems operate on probabilities, making bugs harder to isolate and reproduce. To ensure reliability, QA engineers must implement rigorous data validation, monitoring for data drift, and continuous evaluation pipelines that catch algorithmic bias and performance degradation before production deployment.\n\nAt Navoto, we have found that combining automated unit testing for model inputs with human-in-the-loop validation creates a robust safety net for complex AI deployments. Furthermore, establishing baseline benchmarks and continuous regression testing across edge-case data sets helps catch silent model degradation early. Ultimately, testing AI is not just about checking if code works; it is about verifying that the underlying models make fair, accurate, and consistent decisions in dynamic real-world environments.",
+        category: "AI",
+        read_time: "4 min read",
+        author: "Akhil Saxena",
+        author_role: "Software Tester at Navoto",
+        date: "Nov 23, 2026"
+      },
+      {
+        id: "blog-002",
+        title: "Beyond the Basics: Scaling Automation Testing for Enterprise Agility",
+        summary: "Test automation is no longer just a nice-to-have, but the backbone of continuous delivery pipelines. Learn how to design scalable, self-healing test suites that reduce maintenance overhead and accelerate release cycles.",
+        content: "In today's fast-paced development ecosystem, manual testing bottlenecks can severely hinder an organization's ability to release features quickly. Scaling automation testing requires a strategic approach that goes beyond simply recording and playing back test scripts. By adopting modular design patterns, leveraging containerized test environments, and integrating self-healing locators, engineering teams can drastically minimize the time spent fixing brittle tests.\n\nAt Navoto, our focus has shifted toward building resilient regression suites that run seamlessly within CI/CD pipelines, giving developers instant feedback. When automation is approached with architectural foresight, it transforms from a maintenance chore into a powerful driver of speed, confidence, and enterprise agility.",
+        category: "Automation",
+        read_time: "3 min read",
+        author: "Akhil Saxena",
+        author_role: "Software Tester at Navoto",
+        date: "Nov 23, 2026"
+      },
+      {
+        id: "blog-003",
+        title: "From Manual to Automated: How AI is Transforming the QA Workflow",
+        summary: "The integration of generative AI and intelligent recorders is revolutionizing how QA professionals transition legacy manual tests into robust automated suites. Explore how this synergy saves time and elevates the tester's strategic value.",
+        content: "For years, the transition from manual testing to automation has been a daunting hurdle, often plagued by steep learning curves and resource constraints. Today, AI-powered tools are bridging this gap by automatically converting plain-text test cases, exploratory session recordings, and user stories into executable automation scripts.\n\nThis technological leap allows software testers to spend less time wrestling with syntax and more time focusing on complex exploratory scenarios, edge cases, and user experience. At Navoto, embracing AI-driven test generation has empowered our team to scale our test coverage exponentially without compromising on quality or deep human intuition. By letting AI handle the repetitive heavy lifting, testers are finally stepping into the strategic, high-impact roles they were always meant to hold.",
+        category: "Manual-AI",
+        read_time: "5 min read",
+        author: "Akhil Saxena",
+        author_role: "Software Tester at Navoto",
+        date: "Nov 23, 2026"
+      }
+    ];
+
+    function renderArticle(blog) {
+      const container = document.getElementById('blogContainer');
+      const contentHtml = (blog.content || '').split('\n\n').map(p => `<p style="margin-bottom:1.4rem; line-height:1.75;">${p}</p>`).join('');
+      const key = (blog.category || '').toUpperCase();
+      const images = {
+        'AI': 'blog_ai.png',
+        'SECURITY': 'blog_security.png',
+        'PERFORMANCE': 'blog_ai.png',
+        'AUTOMATION': 'blog_automation.png',
+        'MANUAL-AI': 'blog_manual_ai.png'
+      };
+      const imgSrc = 'assets/' + (images[key] || 'blog_ai.png');
+
+      container.innerHTML = `
+        <header class="blog-header">
+          <span class="blog-tag">${blog.category || 'Article'}</span>
+          <h1 class="blog-title">${blog.title}</h1>
+          <div class="blog-meta">
+            <div class="author-info">
+              <div class="author-avatar">
+                <img src="assets/akhil.jpg" alt="${blog.author || 'Akhil Saxena'}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(blog.author || 'User')}&background=6366f1&color=fff'">
+              </div>
+              <div>
+                <strong>${blog.author || 'Akhil Saxena'}</strong>
+                <div style="font-size: 0.75rem">${blog.author_role || 'Software Tester at Navoto'}</div>
+              </div>
+            </div>
+            <div style="width: 1px; height: 30px; background: var(--border); margin: 0 0.5rem"></div>
+            <div>
+              <div>${blog.date || new Date().toLocaleDateString()}</div>
+              <div>${blog.read_time || '4 min read'}</div>
+            </div>
+          </div>
+          <div style="margin-top: 2rem; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <img src="${imgSrc}" alt="${blog.title}" style="width: 100%; height: auto; max-height: 400px; object-fit: cover;" onerror="this.style.display='none'" />
+          </div>
+        </header>
+        <div class="blog-content">
+          ${contentHtml}
+        </div>
+        <div style="margin-top: 4rem; text-align: center;">
+          <a href="/#blogs" style="color: var(--primary); text-decoration: none; font-weight: 500;">&larr; Back to all articles</a>
+        </div>
+      `;
+    }
+
     async function loadBlog() {
       const urlParams = new URLSearchParams(window.location.search);
-      const blogId = urlParams.get('id');
-      const container = document.getElementById('blogContainer');
+      let blogId = urlParams.get('id');
 
+      // If no ID is specified, show the first article
       if (!blogId) {
-        container.innerHTML = '<div class="error-state"><h2>Article not found</h2><p>No blog ID provided.</p><br><a href="/" style="color:var(--primary); text-decoration: none;">&larr; Return Home</a></div>';
-        return;
+        blogId = 'blog-001';
       }
 
+      // 1. Check sessionStorage for instant render
       try {
-        const response = await fetch(`/api/blogs/${blogId}`);
-        if (!response.ok) throw new Error('Blog not found');
+        const cached = sessionStorage.getItem('qaforge_blogs');
+        if (cached) {
+          const list = JSON.parse(cached);
+          const found = list.find(b => b.id === blogId);
+          if (found) {
+            renderArticle(found);
+            return;
+          }
+        }
+      } catch (_) {}
+
+      // 2. Fetch from backend API
+      try {
+        const response = await fetch(`/api/blogs/${encodeURIComponent(blogId)}`);
+        if (!response.ok) throw new Error('API fetch failed');
         const blog = await response.json();
-
-        // Basic parsing of double-newline delimited text into paragraphs
-        const contentHtml = blog.content.split('\n\n').map(p => `<p>${p}</p>`).join('');
-
-        const key = (blog.category || '').toUpperCase();
-        const images = {
-          'AI': 'blog_ai.png',
-          'SECURITY': 'blog_security.png',
-          'PERFORMANCE': 'blog_ai.png',
-          'AUTOMATION': 'blog_automation.png',
-          'MANUAL-AI': 'blog_manual_ai.png'
-        };
-        const imgSrc = 'assets/' + (images[key] || 'blog_ai.png');
-
-        container.innerHTML = `
-          <header class="blog-header">
-            <span class="blog-tag">${blog.category || 'Article'}</span>
-            <h1 class="blog-title">${blog.title}</h1>
-            <div class="blog-meta">
-              <div class="author-info">
-                <div class="author-avatar">
-                  <img src="assets/akhil.jpg" alt="${blog.author}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(blog.author || 'User')}&background=6366f1&color=fff'">
-                </div>
-                <div>
-                  <strong>${blog.author || 'QAForge Team'}</strong>
-                  <div style="font-size: 0.75rem">${blog.author_role || ''}</div>
-                </div>
-              </div>
-              <div style="width: 1px; height: 30px; background: var(--border); margin: 0 0.5rem"></div>
-              <div>
-                <div>${blog.date || new Date().toLocaleDateString()}</div>
-                <div>${blog.read_time || '5 min read'}</div>
-              </div>
-            </div>
-            <div style="margin-top: 2rem; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-              <img src="${imgSrc}" alt="${blog.title}" style="width: 100%; height: auto; max-height: 400px; object-fit: cover;" />
-            </div>
-          </header>
-          <div class="blog-content">
-            ${contentHtml}
-          </div>
-          <div style="margin-top: 4rem; text-align: center;">
-            <a href="/" style="color: var(--primary); text-decoration: none; font-weight: 500;">&larr; Back to all articles</a>
-          </div>
-        `;
+        renderArticle(blog);
       } catch (error) {
-        container.innerHTML = `<div class="error-state"><h2>Error</h2><p>Could not load the article. It may have been removed.</p><br><a href="/" style="color:var(--primary); text-decoration: none;">&larr; Return Home</a></div>`;
+        // 3. Resilient fallback to embedded articles
+        const fallback = DEFAULT_BLOGS_CLIENT.find(b => b.id === blogId) || DEFAULT_BLOGS_CLIENT[0];
+        renderArticle(fallback);
       }
     }
 
